@@ -39,8 +39,6 @@ from os import path
 ##import traceback
 
 # Added field names
-spatial_band_field = 'SPATIALBAND'
-temporal_band_field = 'TEMPORALBAND'
 incident_type_field = 'INCCLASS'
 origin_feat_field = 'ORIGIN'
 z_value_field = 'ZVALUE'
@@ -241,8 +239,8 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
         # Prepare to insert line features
         new_lines = []
-
-        with arcpy.da.UpdateCursor(in_features, fields) as nearfeats:
+        sql = "ORDER BY {} DESC".format(date_field)
+        with arcpy.da.UpdateCursor(in_features, fields, sql_clause=(None,sql)) as nearfeats:
             for nearfeat in nearfeats:
 
                 fid = nearfeat[0]
@@ -256,10 +254,68 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 if not nearfeat[1]:
                     pass
 
-                elif fid in oids and oid in rnrids:
-                    pass
-
                 elif nearfeat[1] > 0:
+
+                    if fid in oids and oid in rnrids:
+                        exclude_ids = []
+                        duplicate = True
+
+                        while duplicate:
+                            # Need to find next-closest incident and use that as the origin instead
+                            # Create layer of potential R/NR for which an O incident will be sought
+                            exclude_ids.append(oid)
+                            date_val = nearfeat[6]
+                            where_clause = """{} = {}""".format(oidname, fid)
+                            rnr_features = arcpy.MakeFeatureLayer_management(in_features,
+                                                                             'rnr_features',
+                                                                             where_clause)
+
+                            # Select potential O based on max historical temporal band
+                            t_max = date_val
+                            t_min = date_val - td(days=temporal_bands[-1])
+
+                            if len(exclude_ids) == 1:
+                                where_clause = """{0} <= date'{1}' AND {0} > date'{2}' AND {3} <> {4}""".format(date_field,
+                                                                                             t_max,
+                                                                                             t_min,
+                                                                                             oidname,
+                                                                                             exclude_ids[0])
+                            else:
+                                where_clause = """{0} <= date'{1}' AND {0} > date'{2}' AND {3} NOT IN ({4})""".format(date_field,
+                                                                                             t_max,
+                                                                                             t_min,
+                                                                                             oidname,
+                                                                                             ','.join([str(id) for id in exclude_ids]))
+                            o_features = arcpy.MakeFeatureLayer_management(in_features,
+                                                                           'o_features',
+                                                                           where_clause)
+
+                            # Find originator incident nearest each rpt/near rpt inc
+                            arcpy.Near_analysis(rnr_features,
+                                                o_features,
+                                                search_radius=spatial_bands[-1],
+                                                method='GEODESIC')
+
+                            fields = ['OID@', origin_feat_field, dist_orig_field, 'NEAR_FID', 'NEAR_DIST']
+                            with arcpy.da.UpdateCursor(rnr_features, fields) as rows:
+                                for row in rows:
+                                    if row[3] > 0 and row[4] <= spatial_bands[-1]:
+                                        oid = row[3]
+                                        row[1] = oid
+                                        row[2] = row[4]
+                                    else:  # No next-nearest feature found
+                                        oid = ''
+                                        row[1] = None
+                                        row[2] = None
+
+                                    rows.updateRow(row)
+
+                            if oid not in rnrids:
+                                duplicate = False
+
+                    if not oid:  # if no oid save and move on to next incident
+                        nearfeats.updateRow(nearfeat)
+                        continue
 
                     # Get origin feature attributes
                     where_clause = """{} = {}""".format(oidname, oid)
@@ -293,8 +349,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                     # Save line segment
                     end = arcpy.Point(X=nearfeat[8], Y=nearfeat[9], Z=nearfeat[7])
                     start = arcpy.Point(X=o_x, Y=o_y, Z=o_z_value.days)
-##                    end = arcpy.Point(X=nearfeat[8], Y=nearfeat[9], Z=(nearfeat[7]*10))
-##                    start = arcpy.Point(X=o_x, Y=o_y, Z=(o_z_value.days*10))
                     vertices = arcpy.Array([start, end])
                     feature = arcpy.Polyline(vertices, None, True, False)
                     new_lines.append([datediff.days, feature])
