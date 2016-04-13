@@ -39,6 +39,8 @@ from os import path
 ##import traceback
 
 # Added field names
+spatial_band_field = 'SPACEBAND'
+temporal_band_field = 'TIMEBAND'
 incident_type_field = 'INCCLASS'
 origin_feat_field = 'ORIGIN'
 z_value_field = 'ZVALUE'
