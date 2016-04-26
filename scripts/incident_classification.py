@@ -339,14 +339,20 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         for sband in spatial_bands:
             test_distances.extend(all_distances[sband])
             test_distances.sort()
-            half_distances[sband] = test_distances[int(len(test_distances)/2)]
+            if len(test_distances) > 0:
+                half_distances[sband] = test_distances[int(len(test_distances)/2)]
+            else:
+                half_distances[sband] = 'Not Calculated'
 
         test_lives = []
         half_lives = {}
         for tband in temporal_bands:
             test_lives.extend(all_lives[tband])
             test_lives.sort()
-            half_lives[tband] = test_lives[int(len(test_lives)/2)]
+            if len(test_lives) > 0:
+                half_lives[tband] = test_lives[int(len(test_lives)/2)]
+            else:
+                half_lives[tband] = 'Not Calculated'
 
         # Build report content
         perc_o = "{:.1f}".format(100.0*float(orig_cnt)/inc_cnt)
