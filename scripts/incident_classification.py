@@ -29,7 +29,7 @@
 #              processed incidents
 # ==================================================
 # history:
-# 04/19/2016 - AM - beta
+# 04/27/2016 - AM - v3 beta
 # ==================================================
 
 import arcpy
@@ -61,17 +61,12 @@ def reset_fields(fc):
 
     delete_fields = []
 
-    for field in[incident_type_field, z_value_field]:
+    for field in[z_value_field]: # incident_type_field,
         if field in inc_fields:
             delete_fields.append(field)
 
     if delete_fields:
         arcpy.DeleteField_management(fc, delete_fields)
-
-    # Add field for incident classification
-    arcpy.AddField_management(fc,
-                              field_name=incident_type_field,
-                              field_type='TEXT')
 
     # Add field for z value calculation
     arcpy.AddField_management(fc,
@@ -180,6 +175,15 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             for tband in temporal_bands:
                 band_counts[sband][tband] = 0
 
+        # Build empty dictionary to hold type tallies
+        type_counts = {}
+        for sband in spatial_bands:
+            type_counts[sband] = {}
+            for tband in temporal_bands:
+                type_counts[sband][tband] = {'oids': [],
+                                             'nrids': [],
+                                             'rids': []}
+
         # Value lists for half life calculations
         all_distances = {}
         for sband in spatial_bands:
@@ -240,27 +244,31 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 # Identify the spatial bands that are covered by this relationship and create a connecting line feature
                 link_found = False
                 for sband in spatial_bands:
-                    if dist <= sband and not link_found:
+                    if dist <= sband:
                         for tband in temporal_bands:
-                            if daydiff <= tband and not link_found:
-                                # count for band combo
-                                band_counts[sband][tband] += 1
+                            if daydiff <= tband:
+                                if not link_found:
+                                    # track distances and lives for half measures
+                                    all_distances[sband].append(dist)
+                                    all_lives[tband].append(daydiff)
+                                    incident_sband = sband
+                                    incident_tband = tband
 
-                                # track distances and lives for half measures
-                                all_distances[sband].append(dist)
-                                all_lives[tband].append(daydiff)
-                                min_bands_found = True
+                                    # count for band combo
+                                    band_counts[sband][tband] += 1
 
-                                # Repeats will only fall into first spatial band
+                                    link_found = True
+
+                                # id classification
+                                if oid not in type_counts[sband][tband]['oids']:
+                                    type_counts[sband][tband]['oids'].append(oid)
                                 if dist <= spatial_bands[0]:
-                                    rids.append(fid)
-
-                                link_found = True
+                                    if fid not in type_counts[sband][tband]['rids']:
+                                        type_counts[sband][tband]['rids'].append(fid)
+                                elif fid not in type_counts[sband][tband]['nrids']:
+                                    type_counts[sband][tband]['nrids'].append(fid)
 
                 if link_found:
-                    # track oid vs nrid
-                    oids.append(oid)
-                    nrids.append(fid)
                     found_connections.append((oid, fid))
 
                     # create connecting line from x, y, z values of two pts
@@ -268,7 +276,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                     start = arcpy.Point(X=ox, Y=oy, Z=oz)
                     vertices = arcpy.Array([start, end])
                     feature = arcpy.Polyline(vertices, None, True, False)
-                    new_lines.append([fid, oid, dist, sband, daydiff, tband, feature])
+                    new_lines.append([fid, oid, dist, incident_sband, daydiff, incident_tband, feature])
 
         # Delete near table
         arcpy.Delete_management(near_table)
@@ -293,37 +301,51 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             for new_line in new_lines:
                 rows.insertRow(new_line)
 
-        # Overall incident counts
-        inc_cnt = 0
-        orig_cnt = 0
-        rpt_cnt = 0
-        nrpt_cnt = 0
+        # Manage classification fields
+        fieldnames = []
+        for sband in spatial_bands:
+            for tband in temporal_bands:
+                fieldnames.append('s{}t{}'.format(int(sband), int(tband)))
+
+        cur_fields = [f.name for f in arcpy.ListFields(in_features)]
+        for fieldname in fieldnames:
+            if fieldname in cur_fields:
+                arcpy.DeleteField_management(in_features, fieldname)
+            arcpy.AddField_management(in_features, fieldname, 'TEXT', field_length=2)
 
         # Classify & count incidents by type
-        origins = list(set(oids) - set(nrids))  # origins excluding nr and r
-        fields = ["OID@", incident_type_field, date_field, z_value_field]
+        for sband in spatial_bands:
+            for tband in temporal_bands:
+                band = type_counts[sband][tband]
+                type_counts[sband][tband]['oids'] = [id for id in band['oids'] if id not in band['nrids'] and id not in band['rids']]
+                type_counts[sband][tband]['nrids'] = [id for id in band['nrids'] if id not in band['rids']]
+
+        fields = ["OID@", date_field, z_value_field]
+        fields.extend(fieldnames)
 
         with arcpy.da.UpdateCursor(in_features, fields) as rows:
+            inc_count = 0
             for row in rows:
-                inc_class = ''
-                if row[0] in origins:
-                    inc_class = 'O'
-                    orig_cnt += 1
-                elif row[0] in rids:
-                    inc_class = 'R'
-                    rpt_cnt += 1
-                elif row[0] in nrids:
-                    inc_class = 'NR'
-                    nrpt_cnt += 1
-
-                if inc_class:
-                    row[1] = inc_class
-                    inc_cnt += 1
+                inc_count += 1
 
                 # calc z value if missing
-                if not row[3]:
-                    zval = row[2] - min_date
-                    row[3] = zval.days
+                if not row[2]:
+                    zval = row[1] - min_date
+                    row[2] = zval.days
+
+                classifications = []
+
+                for sband in spatial_bands:
+                    for tband in temporal_bands:
+                        if row[0] in type_counts[sband][tband]['nrids']:
+                            classifications.append('NR')
+                        elif row[0] in type_counts[sband][tband]['rids']:
+                            classifications.append('R')
+                        elif row[0] in type_counts[sband][tband]['oids']:
+                            classifications.append('O')
+                        else:
+                            classifications.append(None)
+                row[3:] = classifications
 
                 rows.updateRow(row)
 
@@ -355,34 +377,45 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 half_lives[tband] = 'Not Calculated'
 
         # Build report content
-        perc_o = "{:.1f}".format(100.0*float(orig_cnt)/inc_cnt)
-        perc_nr = "{:.1f}".format(100.0*float(nrpt_cnt)/inc_cnt)
-        perc_r = "{:.1f}".format(100.0*float(rpt_cnt)/inc_cnt)
-
         report_header = ('Repeat and Near Repeat Incident Summary\n'
                          'Created {}\n'.format(now_nice))
 
         data_info = ('Data Source: {}\n'
                      'Incident Date Range: {} - {}\n'.format(in_features, min_date, max_date))
 
-        inc_type_report = ('Count and percentage of each type of incident\n'
-                           ', Count, Percentage\n'
-                           'All Incidents,{}, 100\n'
-                           'Originators,{},{}\n'
-                           'Near Repeats,{},{}\n'
-                           'Repeats,{},{}\n'.format(inc_cnt,
-                                                    orig_cnt, perc_o,
-                                                    nrpt_cnt, perc_nr,
-                                                    rpt_cnt, perc_r))
-        console_type_rpt = ('Count and percentage of each type of incident\n'
-                           '                  Count      Percentage\n'
-                           'All Incidents   {:^10} {:^13}\n'
-                           'Originators     {:^10} {:^13}\n'
-                           'Near Repeats    {:^10} {:^13}\n'
-                           'Repeats         {:^10} {:^13}\n'.format(inc_cnt, 100,
-                                                                  orig_cnt, perc_o,
-                                                                  nrpt_cnt, perc_nr,
-                                                                  rpt_cnt, perc_r))
+        inc_type_reports = ''
+        console_type_rpts = ''
+
+        for sband in spatial_bands:
+            for tband in temporal_bands:
+                cnt_o = len(type_counts[sband][tband]['oids'])
+                cnt_n = len(type_counts[sband][tband]['nrids'])
+                cnt_r = len(type_counts[sband][tband]['rids'])
+
+                perc_o = "{:.1f}".format(100.0*float(cnt_o)/inc_count)
+                perc_n = "{:.1f}".format(100.0*float(cnt_n)/inc_count)
+                perc_r = "{:.1f}".format(100.0*float(cnt_r)/inc_count)
+
+                inc_type_reports += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
+                                   ', Count, Percentage\n'
+                                   'All Incidents,{}, 100\n'
+                                   'Originators,{},{}\n'
+                                   'Near Repeats,{},{}\n'
+                                   'Repeats,{},{}\n\n'.format(sband, unit, tband,
+                                                            inc_count,
+                                                            cnt_o, perc_o,
+                                                            cnt_n, perc_n,
+                                                            cnt_r, perc_r))
+                console_type_rpts += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
+                                   '                  Count      Percentage\n'
+                                   'All Incidents   {:^10} {:^13}\n'
+                                   'Originators     {:^10} {:^13}\n'
+                                   'Near Repeats    {:^10} {:^13}\n'
+                                   'Repeats         {:^10} {:^13}\n\n'.format(sband, unit, tband,
+                                                                          inc_count, 100,
+                                                                          cnt_o, perc_o,
+                                                                          cnt_n, perc_n,
+                                                                          cnt_r, perc_r))
 
         half_lives_str = 'Estimated incident half-life\n'
         half_lives_str_console = 'Estimated incident half-life\n'
@@ -430,7 +463,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 row_sums = [sum(row_counts[0:i]) for i in range(1,len(row_counts)+1)]
 
             row_sum = [x + y for (x, y) in zip(row_sums, row_sum)]
-            row_perc = [100.0 * float(val)/inc_cnt for val in row_sum]
+            row_perc = [100.0 * float(val)/inc_count for val in row_sum]
 
             # append counts & percentages to the table
             counts_table += '<{} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in row_sum]))
@@ -450,8 +483,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             report.write('\n')
             report.write(half_lives_str)
             report.write('\n')
-            report.write(inc_type_report)
-            report.write('\n')
+            report.write(inc_type_reports)
             report.write(counts_title)
             report.write(counts_header)
             report.write(counts_table)
@@ -471,8 +503,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddMessage('')
         arcpy.AddMessage(half_lives_str_console)
         arcpy.AddMessage('')
-        arcpy.AddMessage(console_type_rpt)
-        arcpy.AddMessage('')
+        arcpy.AddMessage(console_type_rpts)
         arcpy.AddMessage(counts_title)
         arcpy.AddMessage(console_counts_header)
         arcpy.AddMessage(console_count)
