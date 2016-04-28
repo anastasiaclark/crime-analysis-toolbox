@@ -40,7 +40,7 @@ from os import path
 # Added field names
 spatial_band_field = 'SPACEBAND'
 temporal_band_field = 'TIMEBAND'
-incident_type_field = 'INCCLASS'
+##incident_type_field = 'INCCLASS'
 origin_feat_field = 'ORIGIN'
 z_value_field = 'ZVALUE'
 dist_orig_field = "DISTTOORIG"
@@ -168,13 +168,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         new_lines = []
         new_rows = []
 
-        # Build empty dictionary to hold spatial and temporal band tallies
-        band_counts = {}
-        for sband in spatial_bands:
-            band_counts[sband] = {}
-            for tband in temporal_bands:
-                band_counts[sband][tband] = 0
-
         # Build empty dictionary to hold type tallies
         type_counts = {}
         for sband in spatial_bands:
@@ -211,14 +204,14 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
                 # Find the two features that are part of the connection
                 where_clause = """{} in ({},{})""".format(oidname, nearrow[0], nearrow[1])
-                fields  = [oidname, date_field, incident_type_field, z_value_field, 'SHAPE@X','SHAPE@Y']
+                fields  = [oidname, date_field, z_value_field, 'SHAPE@X','SHAPE@Y']
                 with arcpy.da.UpdateCursor(in_features, field_names=fields, where_clause=where_clause) as cur_link:
                     for feat in cur_link:
                         # Calculate the z values of each incident in the pair
                         zval = feat[1] - min_date
-                        feat[3] = zval.days
+                        feat[2] = zval.days
                         cur_link.updateRow(feat)
-                        links.append([feat[0], feat[1], feat[4], feat[5], feat[3]])
+                        links.append([feat[0], feat[1], feat[3], feat[4], feat[2]])
 
                 # Identify which feature is the oldest and id it as the source
                 if links[0][1] > links[1][1]:
@@ -253,9 +246,9 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                                     all_lives[tband].append(daydiff)
                                     incident_sband = sband
                                     incident_tband = tband
-
-                                    # count for band combo
-                                    band_counts[sband][tband] += 1
+##
+##                                    # count for band combo
+##                                    band_counts[sband][tband] += 1
 
                                     link_found = True
 
@@ -276,7 +269,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                     start = arcpy.Point(X=ox, Y=oy, Z=oz)
                     vertices = arcpy.Array([start, end])
                     feature = arcpy.Polyline(vertices, None, True, False)
-                    new_lines.append([fid, oid, dist, incident_sband, daydiff, incident_tband, feature])
+                    new_lines.append([fid, oid, dist, daydiff, incident_sband, incident_tband, feature])
 
         # Delete near table
         arcpy.Delete_management(near_table)
@@ -348,6 +341,17 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 row[3:] = classifications
 
                 rows.updateRow(row)
+
+        # Build empty dictionary to hold spatial and temporal band tallies
+        band_counts = {}
+        for sband in spatial_bands:
+            band_counts[sband] = {}
+            for tband in temporal_bands:
+                band_counts[sband][tband] = 0
+
+        for sband in spatial_bands:
+            for tband in temporal_bands:
+                band_counts[sband][tband] = len(type_counts[sband][tband]['nrids']) + len(type_counts[sband][tband]['rids'])
 
         # Get unit of feature class spatial reference system
         try:
@@ -452,22 +456,22 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         for sband in spatial_bands:
 
             # get temporal bands and their incident counts
-            vals = band_counts[sband]
+            vals = [band_counts[sband][tband] for tband in temporal_bands]
 
             # Get spatial band count in each temporal band
             # Sums include counts from smaller bands
-            row_counts = [vals[tband] for tband in temporal_bands]
-            try:
-                row_sums = [sum(row_counts[0:i]) for i in xrange(1,len(row_counts)+1)]
-            except:
-                row_sums = [sum(row_counts[0:i]) for i in range(1,len(row_counts)+1)]
-
-            row_sum = [x + y for (x, y) in zip(row_sums, row_sum)]
-            row_perc = [100.0 * float(val)/inc_count for val in row_sum]
+##            row_counts = [vals[tband] for tband in temporal_bands]
+##            try:
+##                row_sums = [sum(row_counts[0:i]) for i in xrange(1,len(row_counts)+1)]
+##            except:
+##                row_sums = [sum(row_counts[0:i]) for i in range(1,len(row_counts)+1)]
+##
+##            row_sum = [x + y for (x, y) in zip(row_sums, row_sum)]
+            row_perc = [100.0 * float(val)/inc_count for val in vals]
 
             # append counts & percentages to the table
-            counts_table += '<{} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in row_sum]))
-            console_count += '{:>16} {}\n'.format('<{} {}'.format(sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in row_sum]))
+            counts_table += '<{} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in vals]))
+            console_count += '{:>16} {}\n'.format('<{} {}'.format(sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
             percent_table += '<{} {},{}\n'.format(sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
             console_perc += '{:>16} {}\n'.format('<{} {}'.format(sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
 
