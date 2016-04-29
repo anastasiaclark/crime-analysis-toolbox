@@ -29,7 +29,7 @@
 #              processed incidents
 # ==================================================
 # history:
-# 04/27/2016 - AM - v3 beta
+# 04/29/2016 - AM - v3 beta
 # ==================================================
 
 import arcpy
@@ -246,9 +246,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                                     all_lives[tband].append(daydiff)
                                     incident_sband = sband
                                     incident_tband = tband
-##
-##                                    # count for band combo
-##                                    band_counts[sband][tband] += 1
 
                                     link_found = True
 
@@ -385,41 +382,42 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                          'Created {}\n'.format(now_nice))
 
         data_info = ('Data Source: {}\n'
-                     'Incident Date Range: {} - {}\n'.format(in_features, min_date, max_date))
+                     'Incident Date Range: {} - {}\n'
+                         '# Incidents Processed: {}'.format(in_features, min_date, max_date, inc_count))
 
-        inc_type_reports = ''
-        console_type_rpts = ''
-
-        for sband in spatial_bands:
-            for tband in temporal_bands:
-                cnt_o = len(type_counts[sband][tband]['oids'])
-                cnt_n = len(type_counts[sband][tband]['nrids'])
-                cnt_r = len(type_counts[sband][tband]['rids'])
-
-                perc_o = "{:.1f}".format(100.0*float(cnt_o)/inc_count)
-                perc_n = "{:.1f}".format(100.0*float(cnt_n)/inc_count)
-                perc_r = "{:.1f}".format(100.0*float(cnt_r)/inc_count)
-
-                inc_type_reports += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
-                                   ', Count, Percentage\n'
-                                   'All Incidents,{}, 100\n'
-                                   'Originators,{},{}\n'
-                                   'Near Repeats,{},{}\n'
-                                   'Repeats,{},{}\n\n'.format(sband, unit, tband,
-                                                            inc_count,
-                                                            cnt_o, perc_o,
-                                                            cnt_n, perc_n,
-                                                            cnt_r, perc_r))
-                console_type_rpts += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
-                                   '                  Count      Percentage\n'
-                                   'All Incidents   {:^10} {:^13}\n'
-                                   'Originators     {:^10} {:^13}\n'
-                                   'Near Repeats    {:^10} {:^13}\n'
-                                   'Repeats         {:^10} {:^13}\n\n'.format(sband, unit, tband,
-                                                                          inc_count, 100,
-                                                                          cnt_o, perc_o,
-                                                                          cnt_n, perc_n,
-                                                                          cnt_r, perc_r))
+##        inc_type_reports = ''
+##        console_type_rpts = ''
+##
+##        for sband in spatial_bands:
+##            for tband in temporal_bands:
+##                cnt_o = len(type_counts[sband][tband]['oids'])
+##                cnt_n = len(type_counts[sband][tband]['nrids'])
+##                cnt_r = len(type_counts[sband][tband]['rids'])
+##
+##                perc_o = "{:.1f}".format(100.0*float(cnt_o)/inc_count)
+##                perc_n = "{:.1f}".format(100.0*float(cnt_n)/inc_count)
+##                perc_r = "{:.1f}".format(100.0*float(cnt_r)/inc_count)
+##
+##                inc_type_reports += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
+##                                   ', Count, Percentage\n'
+##                                   'All Incidents,{}, 100\n'
+##                                   'Originators,{},{}\n'
+##                                   'Near Repeats,{},{}\n'
+##                                   'Repeats,{},{}\n\n'.format(sband, unit, tband,
+##                                                            inc_count,
+##                                                            cnt_o, perc_o,
+##                                                            cnt_n, perc_n,
+##                                                            cnt_r, perc_r))
+##                console_type_rpts += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
+##                                   '                  Count      Percentage\n'
+##                                   'All Incidents   {:^10} {:^13}\n'
+##                                   'Originators     {:^10} {:^13}\n'
+##                                   'Near Repeats    {:^10} {:^13}\n'
+##                                   'Repeats         {:^10} {:^13}\n\n'.format(sband, unit, tband,
+##                                                                          inc_count, 100,
+##                                                                          cnt_o, perc_o,
+##                                                                          cnt_n, perc_n,
+##                                                                          cnt_r, perc_r))
 
         half_lives_str = 'Estimated incident half-life\n'
         half_lives_str_console = 'Estimated incident half-life\n'
@@ -433,7 +431,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             half_distance_str += '{0} {1} spatial band, {2:.1f} {1}\n'.format(sband, unit, half_distances[sband])
             half_distance_str_console += '{0} {1} spatial band: {2:.1f} {1}\n'.format(sband, unit, half_distances[sband])
 
-        temp_band_strs = ["<{} days".format(b) for b in temporal_bands]
+        temp_band_strs = ["<={} days".format(b) for b in temporal_bands]
         temporal_band_labels = ','.join(temp_band_strs)
         console_tband_labels = ' '.join(['{:^12}'.format(bnd) for bnd in temp_band_strs])
 
@@ -441,10 +439,10 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         percent_title = 'Percentage of all incidents classified as Repeat or Near-Repeat and appearing in each spatial and temporal band\n'
 
         counts_header = ',{}\n'.format(temporal_band_labels)
-        console_counts_header = '                 {}'.format(console_tband_labels)
+        console_counts_header = '                          {}'.format(console_tband_labels)
 
         percent_header = ',{}\n'.format(temporal_band_labels)
-        console_perc_header = '                 {}'.format(console_tband_labels)
+        console_perc_header = '                          {}'.format(console_tband_labels)
 
         counts_table = ""
         percent_table = ""
@@ -470,10 +468,16 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             row_perc = [100.0 * float(val)/inc_count for val in vals]
 
             # append counts & percentages to the table
-            counts_table += '<{} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in vals]))
-            console_count += '{:>16} {}\n'.format('<{} {}'.format(sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
-            percent_table += '<{} {},{}\n'.format(sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
-            console_perc += '{:>16} {}\n'.format('<{} {}'.format(sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
+            if sband == spatial_bands[0]:
+                counts_table += '<={} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in vals]))
+                console_count += '{:>25} {}\n'.format('<={} {}'.format(sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
+                percent_table += '<={} {},{}\n'.format(sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
+                console_perc += '{:>25} {}\n'.format('<={} {}'.format(sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
+            else:
+                counts_table += '{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join([str(cnt) for cnt in vals]))
+                console_count += '{:>25} {}\n'.format('{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
+                percent_table += '<{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
+                console_perc += '{:>25} {}\n'.format('{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
 
         # Write report
         reportname = path.join(report_location, "{}_{}.csv".format('Summary', now))
@@ -487,7 +491,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             report.write('\n')
             report.write(half_lives_str)
             report.write('\n')
-            report.write(inc_type_reports)
+##            report.write(inc_type_reports)
             report.write(counts_title)
             report.write(counts_header)
             report.write(counts_table)
@@ -507,7 +511,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddMessage('')
         arcpy.AddMessage(half_lives_str_console)
         arcpy.AddMessage('')
-        arcpy.AddMessage(console_type_rpts)
+##        arcpy.AddMessage(console_type_rpts)
         arcpy.AddMessage(counts_title)
         arcpy.AddMessage(console_counts_header)
         arcpy.AddMessage(console_count)
@@ -515,6 +519,25 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddMessage(percent_title)
         arcpy.AddMessage(console_perc_header)
         arcpy.AddMessage(console_perc)
+
+        print("\nView incident summary report: {}\n".format(reportname))
+
+        print(report_header)
+        print('')
+        print(data_info)
+        print('')
+        print(half_distance_str_console)
+        print('')
+        print(half_lives_str_console)
+        print('')
+##        arcpy.AddMessage(console_type_rpts)
+        print(counts_title)
+        print(console_counts_header)
+        print(console_count)
+        print('')
+        print(percent_title)
+        print(console_perc_header)
+        print(console_perc)
 
     except arcpy.ExecuteError:
         # Get the tool error messages
