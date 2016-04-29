@@ -61,7 +61,7 @@ def classify_incidents(in_features, date_field, out_dir, out_csv, *args):
                                                       row[1],
                                                       row[2].date(),
                                                       '\n'))
-        arcpy.SetParameterAsText(4, reportname)
+##        arcpy.SetParameterAsText(4, reportname) # Creates xml file
 
     except arcpy.ExecuteError:
         # Get the tool error messages
