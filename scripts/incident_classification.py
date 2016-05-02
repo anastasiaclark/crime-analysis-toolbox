@@ -348,7 +348,10 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
         for sband in spatial_bands:
             for tband in temporal_bands:
-                band_counts[sband][tband] = len(type_counts[sband][tband]['nrids']) + len(type_counts[sband][tband]['rids'])
+                if sband == spatial_bands[0]:
+                    band_counts[sband][tband] = len(type_counts[sband][tband]['rids'])
+                else:
+                    band_counts[sband][tband] = len(type_counts[sband][tband]['nrids'])
 
         # Get unit of feature class spatial reference system
         try:
@@ -474,10 +477,10 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 percent_table += '<={} {},{}\n'.format(sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
                 console_perc += '{:>25} {}\n'.format('<={} {}'.format(sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
             else:
-                counts_table += '{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join([str(cnt) for cnt in vals]))
-                console_count += '{:>25} {}\n'.format('{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
-                percent_table += '<{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
-                console_perc += '{:>25} {}\n'.format('{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
+                counts_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join([str(cnt) for cnt in vals]))
+                console_count += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
+                percent_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
+                console_perc += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
 
         # Write report
         reportname = path.join(report_location, "{}_{}.csv".format('Summary', now))
