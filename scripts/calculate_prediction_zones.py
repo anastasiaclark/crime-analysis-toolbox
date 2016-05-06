@@ -28,7 +28,7 @@
 #              occurance of a repeat or near repeat incident
 # ==================================================
 # history:
-# 03/25/2016 - AM - beta
+# v1 03/25/2016
 # ==================================================
 
 import arcpy
@@ -51,6 +51,9 @@ arcpy.env.overwriteOutput = True
 # Status fields for output polygons (created if non-existant)
 cur_status_field = 'MOSTRECENT'
 cur_date_field = 'CREATEDATE'
+proc_date_field = 'STARTDATE'
+temporal_band_field = 'TIMEBAND'
+spatial_band_field = 'SPACEBAND'
 risk_range_field = "RISKRANGE"
 
 # Get current date & time
@@ -175,15 +178,17 @@ def add_status_fields_to_lyr(lyr):
     if cur_date_field not in fields:
         arcpy.AddField_management(lyr, cur_date_field, 'DATE')
 
-##    if 'gridcode' not in fields:
-##        arcpy.AddField_management(lyr, 'gridcode', 'LONG')
-##
-##    if 'Id' not in fields:
-##        arcpy.AddField_management(lyr, 'Id', 'LONG')
-
     if risk_range_field not in fields:
         arcpy.AddField_management(lyr, risk_range_field, 'LONG')
 
+    if proc_date_field not in fields:
+        arcpy.AddField_management(lyr, proc_date_field, 'DATE')
+
+    if temporal_band_field not in fields:
+        arcpy.AddField_management(lyr, temporal_band_field, 'FLOAT')
+
+    if spatial_band_field not in fields:
+        arcpy.AddField_management(lyr, spatial_band_field, 'FLOAT')
 
 # End of add_status_fields_to_lyr function
 
@@ -225,12 +230,42 @@ def add_status_field_to_service(fl):
                 "domain": None,
                 "defaultValue": None})
 
+    if proc_date_field not in layer_fields:
+        fieldToAdd["fields"].append({
+                "name": proc_date_field,
+                "type": "esriFieldTypeDate",
+                "alias": proc_date_field,
+                "nullable": True,
+                "editable": True,
+                "domain": None,
+                "defaultValue": None})
+
+    if temporal_band_field not in layer_fields:
+        fieldToAdd["fields"].append({
+                "name": temporal_band_field,
+                "type": "esriFieldTypeDouble",
+                "alias": temporal_band_field,
+                "nullable": True,
+                "editable": True,
+                "domain": None,
+                "defaultValue": None})
+
+    if spatial_band_field not in layer_fields:
+        fieldToAdd["fields"].append({
+                "name": spatial_band_field,
+                "type": "esriFieldTypeDouble",
+                "alias": spatial_band_field,
+                "nullable": True,
+                "editable": True,
+                "domain": None,
+                "defaultValue": None})
+
     fl.administration.addToDefinition(fieldToAdd)
 
 # End of add_status_field_to_service function
 
 
-def convert_raster_to_zones(raster, bins, status_field, date_field):
+def convert_raster_to_zones(raster, bins, status_field, date_field, details):
     """Convert non-0 raster cell values to polygons using a
        set number of bins"""
     sliced = arcpy.sa.Slice(raster, int(bins))
@@ -240,15 +275,18 @@ def convert_raster_to_zones(raster, bins, status_field, date_field):
                                              "NO_SIMPLIFY")
     add_status_fields_to_lyr(polys)
 
-    fields = [status_field, date_field, risk_range_field, "gridcode"]
+    fields = [status_field, date_field, risk_range_field, "gridcode", proc_date_field, spatial_band_field, temporal_band_field]
     with arcpy.da.UpdateCursor(polys, fields) as rows:
         for row in rows:
             row[0] = 'True'
             row[1] = todaytime
             row[2] = row[3]
+            row[4] = details[0]
+            row[5] = details[1]
+            row[6] = details[2]
             rows.updateRow(row)
 
-    arcpy.DeleteField_management(polys, ["Id","gridcode"])
+    arcpy.DeleteField_management(polys, ["Id", "gridcode"])
     return polys
 
 # End of convert_raster_to_zones function
@@ -290,9 +328,18 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
                     decay of temporal influence between when the incident
                     occured and the current date.
 
+        init_date: Initial processing date. All incidents with dates between
+                   this date and init_date - temporal_band_size will be
+                   included in the report
+
         spatial_band_size: Value in the units of in_features representing the
                            maximum reach of spatial influence of historical
                            incidents.
+
+        spatial_half: Value between 0 and spatial_band_size representing the
+                      distance at which the risk of a near repeat incident has
+                      been halved. Can be taken from output of classification
+                      tool.
 
         temporal_band_size: Value in days representing the maximum reach of
                             temporal influence of historical incidents.
@@ -301,9 +348,10 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
                             than this value will not be considered when
                             creating the prediction zones.
 
-        init_date: Initial processing date. All incidents with dates between
-                   this date and init_date - temporal_band_size will be
-                   included in the report
+        temporal_half: Value between 0 and temporal_band_size representing the
+                      time at which the risk of a near repeat incident has
+                      been halved. Can be taken from output of classification
+                      tool.
 
         probability_type: 'CUMULATIVE' (default) creates a surface resulting
                           from summing the prediction risks from each incident;
@@ -313,7 +361,7 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
         out_raster: Location for output incident prediction surface raster.
                     Raster name will have timestamp.
 
-        out_polygon_fc: Output polygon feature class based on classifying the
+        out_polygon: Output polygon feature class based on classifying the
                         out_raster values into slice_num categories.
                         Polygon boundaries represent the bounds of the
                         prediction zones as defined by the raster slices.
@@ -367,6 +415,10 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
             except ValueError:
                 raise Exception("Invalid date format. Initial Date must be in the format yyyy-mm-dd.")
 
+        # test for input features
+        in_count = arcpy.GetCount_management(in_features)
+        if int(in_count.getOutput(0)) < 1:
+            raise Exception("Insufficient features for processing")
 
         # Work in an in-memory copy of the dataset to avoid editing the original
         incident_fc = arcpy.FeatureClassToFeatureClass_conversion(in_features,
@@ -397,12 +449,12 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
 
         # Create risk rasters for each incident within temporal reach of today
         sql = """{0} <= date'{1}' AND {0} > date'{2}'""".format(date_field,
-                                                                 init_date,
-                                                                 date_min)
+                                                                init_date,
+                                                                date_min)
         numrows = 0
-        with arcpy.da.SearchCursor(incident_fc,"OID@", where_clause=sql) as rows:
+        with arcpy.da.SearchCursor(incident_fc, "OID@", where_clause=sql) as rows:
             for row in rows:
-                numrows+= 1
+                numrows += 1
 
         with arcpy.da.SearchCursor(incident_fc,
                                    ['OID@', date_field],
@@ -455,7 +507,9 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
         arcpy.SetProgressorLabel('Creating polygons...')
 
         temp_polys = convert_raster_to_zones(sum_raster, slice_num,
-                                             cur_status_field, cur_date_field)
+                                             cur_status_field, cur_date_field,
+                                             [init_date, spatial_band_size,
+                                             temporal_band_size])
 
         # Creat polygon fc if it doesn't exist
         if not arcpy.Exists(out_polygon):
@@ -530,7 +584,6 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
         # Print Python error messages for use in Python / Python Window
         print("\n" + str(sys.exc_info()[1]) + "\n")
 
-
     finally:
         arcpy.SetProgressorLabel('Completed.')
         arcpy.CheckInExtension("Spatial")
@@ -545,7 +598,7 @@ if __name__ == '__main__':
     while i < len(argv):
         if argv[i] == "#":
             argv[i] = ""
-        i+=1
+        i += 1
     argv = tuple(argv)
 
     main(*argv)
