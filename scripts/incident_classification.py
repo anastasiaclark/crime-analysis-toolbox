@@ -29,7 +29,7 @@
 #              processed incidents
 # ==================================================
 # history:
-# 04/29/2016 - AM - v3 beta
+# v1 05/05/2016
 # ==================================================
 
 import arcpy
@@ -40,16 +40,16 @@ from os import path
 # Added field names
 spatial_band_field = 'SPACEBAND'
 temporal_band_field = 'TIMEBAND'
-##incident_type_field = 'INCCLASS'
 origin_feat_field = 'ORIGIN'
 z_value_field = 'ZVALUE'
 dist_orig_field = "DISTTOORIG"
 
-units = {"Meter": "m",
-         "Foot_US": "ft",
-         "Foot": "ft",
-         "150_Kilometers": "x 150km",
-         "50_Kilometers": "x 50km"}
+units = {"Meter": {"short":"m",
+                   "long": "Meters"},
+         "Foot_US": {"short":"ft",
+                     "long": "Feet"},
+         "Foot": {"short":"ft",
+                     "long": "Feet"}}
 
 
 def reset_fields(fc):
@@ -61,7 +61,7 @@ def reset_fields(fc):
 
     delete_fields = []
 
-    for field in[z_value_field]: # incident_type_field,
+    for field in[z_value_field]:
         if field in inc_fields:
             delete_fields.append(field)
 
@@ -79,6 +79,39 @@ def calculate_band(value, bands):
     for band in bands:
         if band > value:
             return band
+
+
+def get_date_range(fc, field):
+    """Returns the min and max values from a date field"""
+    with arcpy.da.SearchCursor(fc, field) as rows:
+        date_vals = [row[0] for row in rows]
+
+    date_vals = list(set(date_vals))
+    date_vals.sort()
+
+    # Range of incident dates
+    return date_vals[0], date_vals[-1]
+
+
+def find_feature_pair(fc, oid_field, date_field, ids, min_date):
+    """Returns coordinates and attributes for vertices of line features"""
+
+    links = []
+
+    # Find the two features that are part of the connection
+    where_clause = """{} in ({},{})""".format(oid_field, ids[0], ids[1])
+    fields = [oid_field, date_field, z_value_field, 'SHAPE@X', 'SHAPE@Y']
+    with arcpy.da.UpdateCursor(fc,
+                               field_names=fields,
+                               where_clause=where_clause) as cur_link:
+        for feat in cur_link:
+            # Calculate the z values of each incident in the pair
+            zval = feat[1] - min_date
+            feat[2] = zval.days
+            cur_link.updateRow(feat)
+            links.append([feat[0], feat[1], feat[3], feat[4], feat[2]])
+
+    return links
 
 
 def classify_incidents(in_features, date_field, report_location, repeatdist,
@@ -123,7 +156,13 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         if not path.isdir(report_location):
             report_location = path.dirname(report_location)
 
-        # Build sorted lists of band values
+        # test for input features
+        in_count = arcpy.GetCount_management(in_features)
+        if int(in_count.getOutput(0)) <= 1:
+            raise Exception("Insufficient features for processing")
+
+
+        # Build sorted lists of unique band values
         spatial_bands = [float(b) for b in spatial_bands.split(';')]
         temporal_bands = [float(b) for b in temporal_bands.split(';')]
 
@@ -148,16 +187,17 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         # Get name of OID field
         oidname = arcpy.Describe(in_features).oidFieldName
 
-        # Get sorted list of unique incident date values
-        with arcpy.da.SearchCursor(in_features, date_field) as rows:
-            date_vals = [row[0] for row in rows]
+        # Get min and max date values
+        min_date, max_date = get_date_range(in_features, date_field)
 
-        date_vals = list(set(date_vals))
-        date_vals.sort()
-
-        # Range of incident dates
-        min_date = date_vals[0]
-        max_date = date_vals[-1]
+        # Get unit of feature class spatial reference system
+        sr = arcpy.Describe(in_features).spatialReference
+        try:
+            unit_short = units[sr.linearUnitName]["short"]
+            unit_long = units[sr.linearUnitName]["long"]
+        except KeyError:
+            unit_short = ''
+            unit_long = ''
 
         # Keep track of origins and nrs
         oids = []
@@ -188,30 +228,27 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
         found_connections = []
 
-        # Build table of all records within the max spatial band of anther feature
-        near_table = arcpy.GenerateNearTable_analysis(in_features, in_features, search_radius=temporal_bands[-1], closest='ALL', method='GEODESIC')
+        # Build table of records within the max spatial band of another feature
+        search = "{} {}".format(spatial_bands[-1], unit_long)
+        near_table = arcpy.GenerateNearTable_analysis(in_features,
+                                                      in_features,
+                                                      search_radius=search,
+                                                      closest='ALL',
+                                                      method='GEODESIC')
 
         # Identify and process relevent near features
-        with arcpy.da.SearchCursor(near_table, field_names=['IN_FID', 'NEAR_FID', 'NEAR_DIST']) as nearrows:
+        fields = ['IN_FID', 'NEAR_FID', 'NEAR_DIST']
+        with arcpy.da.SearchCursor(near_table, field_names=fields) as nearrows:
 
             # Process each identified connection within the spatial bands
             for nearrow in nearrows:
                 dist = nearrow[2]
-                if not dist <= spatial_bands[-1]:
-                    continue
 
-                links= []
-
-                # Find the two features that are part of the connection
-                where_clause = """{} in ({},{})""".format(oidname, nearrow[0], nearrow[1])
-                fields  = [oidname, date_field, z_value_field, 'SHAPE@X','SHAPE@Y']
-                with arcpy.da.UpdateCursor(in_features, field_names=fields, where_clause=where_clause) as cur_link:
-                    for feat in cur_link:
-                        # Calculate the z values of each incident in the pair
-                        zval = feat[1] - min_date
-                        feat[2] = zval.days
-                        cur_link.updateRow(feat)
-                        links.append([feat[0], feat[1], feat[3], feat[4], feat[2]])
+                links = find_feature_pair(in_features,
+                                          oidname,
+                                          date_field,
+                                          [nearrow[0], nearrow[1]],
+                                          min_date)
 
                 # Identify which feature is the oldest and id it as the source
                 if links[0][1] > links[1][1]:
@@ -234,7 +271,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 if daydiff > temporal_bands[-1]:
                     continue
 
-                # Identify the spatial bands that are covered by this relationship and create a connecting line feature
+                # Identify the spatial & temporal bands
                 link_found = False
                 for sband in spatial_bands:
                     if dist <= sband:
@@ -266,13 +303,13 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                     start = arcpy.Point(X=ox, Y=oy, Z=oz)
                     vertices = arcpy.Array([start, end])
                     feature = arcpy.Polyline(vertices, None, True, False)
-                    new_lines.append([fid, oid, dist, daydiff, incident_sband, incident_tband, feature])
+                    new_lines.append([fid, oid, dist, daydiff, incident_sband,
+                                      incident_tband, feature])
 
         # Delete near table
         arcpy.Delete_management(near_table)
 
         # Create feature class for connecting lines
-        sr = arcpy.Describe(in_features).spatialReference
         connectors = arcpy.CreateFeatureclass_management(out_lines_dir,
                                                          out_lines_name,
                                                          'POLYLINE',
@@ -286,7 +323,8 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddField_management(connectors, temporal_band_field, "FLOAT")
 
         # Insert connecting line features from the array of values
-        fields = ['FEATUREID', origin_feat_field, dist_orig_field, 'RPTDAYS', spatial_band_field, temporal_band_field, 'SHAPE@']
+        fields = ['FEATUREID', origin_feat_field, dist_orig_field, 'RPTDAYS',
+                  spatial_band_field, temporal_band_field, 'SHAPE@']
         with arcpy.da.InsertCursor(connectors, fields) as rows:
             for new_line in new_lines:
                 rows.insertRow(new_line)
@@ -301,7 +339,8 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         for fieldname in fieldnames:
             if fieldname in cur_fields:
                 arcpy.DeleteField_management(in_features, fieldname)
-            arcpy.AddField_management(in_features, fieldname, 'TEXT', field_length=2)
+            arcpy.AddField_management(in_features, fieldname,
+                                      'TEXT', field_length=2)
 
         # Classify & count incidents by type
         for sband in spatial_bands:
@@ -353,12 +392,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                 else:
                     band_counts[sband][tband] = len(type_counts[sband][tband]['nrids'])
 
-        # Get unit of feature class spatial reference system
-        try:
-            unit = units[sr.linearUnitName]
-        except KeyError:
-            unit = ''
-
         # Get half-life and half-distance
         test_distances = []
         half_distances = {}
@@ -386,41 +419,10 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
         data_info = ('Data Source: {}\n'
                      'Incident Date Range: {} - {}\n'
-                         '# Incidents Processed: {}'.format(in_features, min_date, max_date, inc_count))
-
-##        inc_type_reports = ''
-##        console_type_rpts = ''
-##
-##        for sband in spatial_bands:
-##            for tband in temporal_bands:
-##                cnt_o = len(type_counts[sband][tband]['oids'])
-##                cnt_n = len(type_counts[sband][tband]['nrids'])
-##                cnt_r = len(type_counts[sband][tband]['rids'])
-##
-##                perc_o = "{:.1f}".format(100.0*float(cnt_o)/inc_count)
-##                perc_n = "{:.1f}".format(100.0*float(cnt_n)/inc_count)
-##                perc_r = "{:.1f}".format(100.0*float(cnt_r)/inc_count)
-##
-##                inc_type_reports += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
-##                                   ', Count, Percentage\n'
-##                                   'All Incidents,{}, 100\n'
-##                                   'Originators,{},{}\n'
-##                                   'Near Repeats,{},{}\n'
-##                                   'Repeats,{},{}\n\n'.format(sband, unit, tband,
-##                                                            inc_count,
-##                                                            cnt_o, perc_o,
-##                                                            cnt_n, perc_n,
-##                                                            cnt_r, perc_r))
-##                console_type_rpts += ('Count and percentage of each type of incident in spatial band {}{} and temporal band {} days\n'
-##                                   '                  Count      Percentage\n'
-##                                   'All Incidents   {:^10} {:^13}\n'
-##                                   'Originators     {:^10} {:^13}\n'
-##                                   'Near Repeats    {:^10} {:^13}\n'
-##                                   'Repeats         {:^10} {:^13}\n\n'.format(sband, unit, tband,
-##                                                                          inc_count, 100,
-##                                                                          cnt_o, perc_o,
-##                                                                          cnt_n, perc_n,
-##                                                                          cnt_r, perc_r))
+                     '# Incidents Processed: {}'.format(in_features,
+                                                        min_date,
+                                                        max_date,
+                                                        inc_count))
 
         half_lives_str = 'Estimated incident half-life\n'
         half_lives_str_console = 'Estimated incident half-life\n'
@@ -431,21 +433,24 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         half_distance_str = 'Estimated incident half-distance\n'
         half_distance_str_console = 'Estimated incident half-distance\n'
         for sband in spatial_bands[1:]:
-            half_distance_str += '{0} {1} spatial band, {2:.1f} {1}\n'.format(sband, unit, half_distances[sband])
-            half_distance_str_console += '{0} {1} spatial band: {2:.1f} {1}\n'.format(sband, unit, half_distances[sband])
+            half_distance_str += '{0} {1} spatial band, {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
+            half_distance_str_console += '{0} {1} spatial band: {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
 
         temp_band_strs = ["<={} days".format(b) for b in temporal_bands]
         temporal_band_labels = ','.join(temp_band_strs)
         console_tband_labels = ' '.join(['{:^12}'.format(bnd) for bnd in temp_band_strs])
 
-        counts_title = 'Number of Repeat and Near-Repeat incidents per spatial and temporal band\n'
-        percent_title = 'Percentage of all incidents classified as Repeat or Near-Repeat and appearing in each spatial and temporal band\n'
+        counts_title = ('Number of Repeat and Near-Repeat incidents per '
+                        'spatial and temporal band\n')
+        percent_title = ('Percentage of all incidents classified as Repeat or '
+                         'Near-Repeat and appearing in each spatial and '
+                         'temporal band\n')
 
         counts_header = ',{}\n'.format(temporal_band_labels)
-        console_counts_header = '                          {}'.format(console_tband_labels)
+        console_counts_header = '{}{}'.format(' '*26, console_tband_labels)
 
         percent_header = ',{}\n'.format(temporal_band_labels)
-        console_perc_header = '                          {}'.format(console_tband_labels)
+        console_perc_header = '{}{}'.format(' '*26, console_tband_labels)
 
         counts_table = ""
         percent_table = ""
@@ -461,26 +466,19 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
             # Get spatial band count in each temporal band
             # Sums include counts from smaller bands
-##            row_counts = [vals[tband] for tband in temporal_bands]
-##            try:
-##                row_sums = [sum(row_counts[0:i]) for i in xrange(1,len(row_counts)+1)]
-##            except:
-##                row_sums = [sum(row_counts[0:i]) for i in range(1,len(row_counts)+1)]
-##
-##            row_sum = [x + y for (x, y) in zip(row_sums, row_sum)]
             row_perc = [100.0 * float(val)/inc_count for val in vals]
 
             # append counts & percentages to the table
             if sband == spatial_bands[0]:
-                counts_table += '<={} {},{}\n'.format(sband, unit, ','.join([str(cnt) for cnt in vals]))
-                console_count += '{:>25} {}\n'.format('<={} {}'.format(sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
-                percent_table += '<={} {},{}\n'.format(sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
-                console_perc += '{:>25} {}\n'.format('<={} {}'.format(sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
+                counts_table += '<={} {},{}\n'.format(sband, unit_short, ','.join([str(cnt) for cnt in vals]))
+                console_count += '{:>25} {}\n'.format('<={} {}'.format(sband, unit_short), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
+                percent_table += '<={} {},{}\n'.format(sband, unit_short, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
+                console_perc += '{:>25} {}\n'.format('<={} {}'.format(sband, unit_short), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
             else:
-                counts_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join([str(cnt) for cnt in vals]))
-                console_count += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
-                percent_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
-                console_perc += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
+                counts_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit_short, ','.join([str(cnt) for cnt in vals]))
+                console_count += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit_short), ' '.join(['{:^12}'.format(cnt) for cnt in vals]))
+                percent_table += '>{} to {} {},{}\n'.format(spatial_bands[0], sband, unit_short, ','.join(["{:.1f}".format(prc) for prc in row_perc]))
+                console_perc += '{:>25} {}\n'.format('>{} to {} {}'.format(spatial_bands[0], sband, unit_short), ' '.join(['{:^12}'.format("{:.1f}".format(prc)) for prc in row_perc]))
 
         # Write report
         reportname = path.join(report_location, "{}_{}.csv".format('Summary', now))
@@ -494,7 +492,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
             report.write('\n')
             report.write(half_lives_str)
             report.write('\n')
-##            report.write(inc_type_reports)
             report.write(counts_title)
             report.write(counts_header)
             report.write(counts_table)
@@ -514,7 +511,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddMessage('')
         arcpy.AddMessage(half_lives_str_console)
         arcpy.AddMessage('')
-##        arcpy.AddMessage(console_type_rpts)
         arcpy.AddMessage(counts_title)
         arcpy.AddMessage(console_counts_header)
         arcpy.AddMessage(console_count)
@@ -522,25 +518,6 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         arcpy.AddMessage(percent_title)
         arcpy.AddMessage(console_perc_header)
         arcpy.AddMessage(console_perc)
-
-##        print("\nView incident summary report: {}\n".format(reportname))
-##
-##        print(report_header)
-##        print('')
-##        print(data_info)
-##        print('')
-##        print(half_distance_str_console)
-##        print('')
-##        print(half_lives_str_console)
-##        print('')
-####        arcpy.AddMessage(console_type_rpts)
-##        print(counts_title)
-##        print(console_counts_header)
-##        print(console_count)
-##        print('')
-##        print(percent_title)
-##        print(console_perc_header)
-##        print(console_perc)
 
     except arcpy.ExecuteError:
         # Get the tool error messages
