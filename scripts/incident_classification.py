@@ -84,7 +84,7 @@ def calculate_band(value, bands):
 def get_date_range(fc, field):
     """Returns the min and max values from a date field"""
     with arcpy.da.SearchCursor(fc, field) as rows:
-        date_vals = [row[0] for row in rows]
+        date_vals = [row[0] for row in rows if row[0]]
 
     date_vals = list(set(date_vals))
     date_vals.sort()
@@ -106,6 +106,8 @@ def find_feature_pair(fc, oid_field, date_field, ids, min_date):
                                where_clause=where_clause) as cur_link:
         for feat in cur_link:
             # Calculate the z values of each incident in the pair
+            if not feat[1]:
+                return ['error', feat[0]]
             zval = feat[1] - min_date
             feat[2] = zval.days
             cur_link.updateRow(feat)
@@ -238,6 +240,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
 
         # Identify and process relevent near features
         fields = ['IN_FID', 'NEAR_FID', 'NEAR_DIST']
+        ignored = []
         with arcpy.da.SearchCursor(near_table, field_names=fields) as nearrows:
 
             # Process each identified connection within the spatial bands
@@ -251,7 +254,14 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                                           min_date)
 
                 # Identify which feature is the oldest and id it as the source
-                if links[0][1] > links[1][1]:
+                if links[0] == 'error':
+                    if links[1] not in ignored:
+                        arcpy.AddWarning('Ignored potential connection(s) with feature {0} because of invalid date'.format(links[1]))
+                        print('Ignored potential connection(s) with feature {0} because of invalid date'.format(links[1]))
+                        ignored.append(links[1])
+                    continue
+
+                elif links[0][1] > links[1][1]:
                     oid, odate, ox, oy, oz = links[1]
                     fid, fdate, fx, fy, fz = links[0]
 
@@ -355,12 +365,17 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         with arcpy.da.UpdateCursor(in_features, fields) as rows:
             inc_count = 0
             for row in rows:
-                inc_count += 1
 
                 # calc z value if missing
                 if not row[2]:
+                    if not row[1]:
+                        arcpy.AddWarning('Could not calculate z value for feature {} because of invalid date'.format(row[0]))
+                        print('Could not calculate z value for feature {} because of invalid date'.format(row[0]))
+                        continue
+
                     zval = row[1] - min_date
                     row[2] = zval.days
+                inc_count += 1
 
                 classifications = []
 
