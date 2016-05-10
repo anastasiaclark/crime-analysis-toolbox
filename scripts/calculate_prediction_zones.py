@@ -123,7 +123,7 @@ def connect_to_layer(username, password, server_url, service_url):
 # End of connect_to_layer function
 
 
-def calculate_risk_surface(lyr, age, dist, halflife, halfdist):
+def calculate_risk_surface(sum_raster, lyr, age, dist, halflife, halfdist, prob_type):
     """Create raster of risk extent and intensity based on incident age and
        spatial reach of influence"""
 
@@ -145,7 +145,16 @@ def calculate_risk_surface(lyr, age, dist, halflife, halfdist):
     null_locations = arcpy.sa.IsNull(inc_raster)
     inc_raster = arcpy.sa.Con(null_locations, 0,
                               inc_raster, where_clause="Value = 1")
-    return inc_raster
+
+    # Process cumulative risk
+    if prob_type == 'CUMULATIVE':
+        sum_raster += inc_raster
+
+    # Process maximum risk
+    else:
+        sum_raster = calculate_max_risk(sum_raster, inc_raster)
+
+    return sum_raster
 
 # End of calculate_risk_surface function
 
@@ -275,7 +284,8 @@ def convert_raster_to_zones(raster, bins, status_field, date_field, details):
                                              "NO_SIMPLIFY")
     add_status_fields_to_lyr(polys)
 
-    fields = [status_field, date_field, risk_range_field, "gridcode", proc_date_field, spatial_band_field, temporal_band_field]
+    fields = [status_field, date_field, risk_range_field, "gridcode",
+              proc_date_field, spatial_band_field, temporal_band_field]
     with arcpy.da.UpdateCursor(polys, fields) as rows:
         for row in rows:
             row[0] = 'True'
@@ -447,15 +457,18 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
         # Calculate minimum bounds of accepted time frame
         date_min = init_date - td(days=int(temporal_band_size))
 
-        # Create risk rasters for each incident within temporal reach of today
+        # Count incidents within temporal reach of today for messaging
         sql = """{0} <= date'{1}' AND {0} > date'{2}'""".format(date_field,
                                                                 init_date,
                                                                 date_min)
-        numrows = 0
-        with arcpy.da.SearchCursor(incident_fc, "OID@", where_clause=sql) as rows:
-            for row in rows:
-                numrows += 1
+        arcpy.SelectLayerByAttribute_management(incident_lyr, 'NEW_SELECTION', sql)
+        rowcount = arcpy.GetCount_management(incident_lyr)
+        numrows = int(rowcount.getOutput(0))
+        arcpy.SelectLayerByAttribute_management(incident_lyr, 'CLEAR_SELECTION')
+        if rowcount < 1:
+            raise Exception('No features found within {} days prior to {}'.format(temporal_band_size, init_date))
 
+        # Create risk rasters for each incident within temporal reach of today
         with arcpy.da.SearchCursor(incident_fc,
                                    ['OID@', date_field],
                                    where_clause=sql) as incidents:
@@ -474,20 +487,13 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
                 arcpy.SelectLayerByAttribute_management(incident_lyr,
                                                         where_clause=sql)
 
-                inc_raster = calculate_risk_surface(incident_lyr,
+                sum_raster = calculate_risk_surface(sum_raster,
+                                                    incident_lyr,
                                                     date_diff.days,
                                                     spatial_band_size,
                                                     float(temporal_half),
-                                                    float(spatial_half))
-
-                # Process cumulative risk
-                if probability_type == 'CUMULATIVE':
-                    sum_raster += inc_raster
-
-                # Process maximum risk
-                else:
-                    sum_raster = calculate_max_risk(sum_raster, inc_raster)
-
+                                                    float(spatial_half),
+                                                    probability_type)
                 count += 1
 
         if not count:
@@ -528,10 +534,10 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
                 rows.updateRow(row)
 
         # Append temp poly features to output polygon fc
-        arcpy.Append_management(temp_polys, out_polygon)
+        arcpy.Append_management(temp_polys, out_polygon, "NO_TEST")
         arcpy.SetParameterAsText(17, out_polygon)
 
-        # Update polygon services.
+        # Update polygon services
         # If pubtype = NONE or SERVER, no steps necessary
 
         if pub_type in ['ARCGIS_ONLINE', 'ARCGIS_PORTAL'] and pub_polys:
@@ -550,20 +556,14 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
             add_status_field_to_service(fl)
 
             # Update 'current' features in service to be 'past'
-            field_info = [{'FieldName': cur_status_field,
-                           'ValueToSet': 'False'}]
-
-            out_fields = ['objectid']
-            for fld in field_info:
-                out_fields.append(fld['FieldName'])
+            out_fields = ['objectid', cur_status_field]
 
             sql = """{} = 'True'""".format(cur_status_field)
             updateFeats = fl.query(where=sql,
                                    out_fields=','.join(out_fields))
 
             for feat in updateFeats:
-                for fld in field_info:
-                    feat.set_value(fld['FieldName'], fld['ValueToSet'])
+                feat.set_value(cur_status_field, 'False')
 
             fl.updateFeature(features=updateFeats)
 
