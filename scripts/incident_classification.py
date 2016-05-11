@@ -388,7 +388,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                         elif row[0] in type_counts[sband][tband]['oids']:
                             classifications.append('O')
                         else:
-                            classifications.append(None)
+                            classifications.append('')
                 row[3:] = classifications
 
                 rows.updateRow(row)
@@ -442,14 +442,22 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
         half_lives_str = 'Estimated incident half-life\n'
         half_lives_str_console = 'Estimated incident half-life\n'
         for tband in temporal_bands:
-            half_lives_str += '{} days temporal band, {:.1f} days\n'.format(tband, half_lives[tband])
-            half_lives_str_console += '{} days temporal band: {:.1f} days\n'.format(tband, half_lives[tband])
+            try:
+                half_lives_str += '{} days temporal band, {:.1f} days\n'.format(tband, half_lives[tband])
+                half_lives_str_console += '{} days temporal band: {:.1f} days\n'.format(tband, half_lives[tband])
+            except ValueError:
+                half_lives_str += '{} days temporal band, {} days\n'.format(tband, half_lives[tband])
+                half_lives_str_console += '{} days temporal band: {} days\n'.format(tband, half_lives[tband])
 
         half_distance_str = 'Estimated incident half-distance\n'
         half_distance_str_console = 'Estimated incident half-distance\n'
         for sband in spatial_bands[1:]:
-            half_distance_str += '{0} {1} spatial band, {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
-            half_distance_str_console += '{0} {1} spatial band: {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
+            try:
+                half_distance_str += '{0} {1} spatial band, {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
+                half_distance_str_console += '{0} {1} spatial band: {2:.1f} {1}\n'.format(sband, unit_short, half_distances[sband])
+            except ValueError:
+                half_distance_str += '{0} {1} spatial band, {2} {1}\n'.format(sband, unit_short, half_distances[sband])
+                half_distance_str_console += '{0} {1} spatial band: {2} {1}\n'.format(sband, unit_short, half_distances[sband])
 
         temp_band_strs = ["<={} days".format(b) for b in temporal_bands]
         temporal_band_labels = ','.join(temp_band_strs)
