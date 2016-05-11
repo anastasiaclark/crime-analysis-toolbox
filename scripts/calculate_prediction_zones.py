@@ -411,7 +411,7 @@ def main(in_features, date_field, init_date, spatial_band_size, spatial_half,
         now = dt.strftime(dt.now(), "%y%m%d%H%M%S")
 
         # Convert booleen values
-        if not pub_polys == 'True':
+        if not pub_polys.upper() == 'TRUE':
             pub_polys = False
 
         # Get init_date value
