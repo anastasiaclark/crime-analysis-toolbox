@@ -17,9 +17,8 @@
 # incident_classification.py BETA
 # --------------------------------------------------
 # requirments: ArcMap/ArcCatalog 10.3.1+
-#              ArcGIS Pro 1.2+
 #              ArcGIS Advanced license required
-#              Python 2.7 or 3.4
+#              Python 2.7
 # author: ArcGIS Solutions
 # contact: ArcGISTeamLocalGov@esri.com
 # company: Esri
@@ -439,7 +438,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                                                         max_date,
                                                         inc_count))
 
-        half_lives_str = 'Estimated incident half-life\n'
+        half_lives_str = '\nEstimated incident half-life\n'
         half_lives_str_console = 'Estimated incident half-life\n'
         for tband in temporal_bands:
             try:

@@ -17,8 +17,7 @@
 # near_repeat_export.py BETA
 # --------------------------------------------------
 # requirments: ArcMap/ArcCatalog 10.3.1+
-#              ArcGIS Pro 1.2+
-#              Python 2.7 or 3.4
+#              Python 2.7
 # author: ArcGIS Solutions
 # contact: ArcGISTeamLocalGov@esri.com
 # company: Esri
@@ -27,11 +26,12 @@
 #              calculator
 # ==================================================
 # history:
-# 04/06/2016 - AM - beta
+# v1 05/05/2016 - AM
 # ==================================================
 
 import arcpy
 from os import path
+
 
 def classify_incidents(in_features, date_field, out_dir, out_csv, *args):
     """Creates a csv file of the format required by the near repeat calculator
@@ -47,7 +47,7 @@ def classify_incidents(in_features, date_field, out_dir, out_csv, *args):
 
        out_csv: Name of the generated csv file"""
     try:
-    # Create csv file
+        # Create csv file
         reportname = path.join(out_dir, "{}.csv".format(out_csv))
         with open(reportname, 'w') as report:
 
@@ -61,7 +61,6 @@ def classify_incidents(in_features, date_field, out_dir, out_csv, *args):
                                                       row[1],
                                                       row[2].date(),
                                                       '\n'))
-##        arcpy.SetParameterAsText(4, reportname) # Creates xml file
 
     except arcpy.ExecuteError:
         # Get the tool error messages
