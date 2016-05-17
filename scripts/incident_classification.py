@@ -439,7 +439,7 @@ def classify_incidents(in_features, date_field, report_location, repeatdist,
                                                         inc_count))
 
         half_lives_str = '\nEstimated incident half-life\n'
-        half_lives_str_console = 'Estimated incident half-life\n'
+        half_lives_str_console = '\nEstimated incident half-life\n'
         for tband in temporal_bands:
             try:
                 half_lives_str += '{} days temporal band, {:.1f} days\n'.format(tband, half_lives[tband])
