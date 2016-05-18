@@ -5,6 +5,7 @@
 
 #from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import absolute_import
 import io
 import os
 import re
@@ -26,7 +27,7 @@ from ..packages.six.moves.urllib import request
 from ..packages.six.moves import http_cookiejar as cookiejar
 from ..packages.six.moves.urllib_parse import urlencode
 ########################################################################
-__version__ = "3.5.3"
+__version__ = "3.5.5"
 
 ########################################################################
 class RedirectHandler(request.HTTPRedirectHandler):

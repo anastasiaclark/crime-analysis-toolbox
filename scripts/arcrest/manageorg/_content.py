@@ -782,7 +782,8 @@ class Item(BaseAGOLClass):
                              proxy_url=self._proxy_url)
     #----------------------------------------------------------------------
     def deleteRating(self):
-        """"""
+        """Removes the rating the calling user added for the specified item
+        (POST only)."""
         url = "%s/deleteRating" % self.root
         params = {
             "f": "json",
@@ -1015,6 +1016,8 @@ class Item(BaseAGOLClass):
 ########################################################################
 class UserItem(BaseAGOLClass):
     """represents a single item on the site for a given user"""
+    _appProxies = None
+    _serviceProxyParams = None
     _url = None
     _itemType = None
     _uploaded = None
@@ -1406,6 +1409,18 @@ class UserItem(BaseAGOLClass):
         if self._sourceUrl is None:
             self.__init()
         return self._sourceUrl
+    #----------------------------------------------------------------------
+    @property
+    def appProxies(self):
+        if self._appProxies is None:
+            self.__init()
+        return self._appProxies
+    #----------------------------------------------------------------------
+    @property
+    def serviceProxyParams(self):
+        if self._serviceProxyParams is None:
+            self.__init()
+        return self._serviceProxyParams
     #----------------------------------------------------------------------
     @property
     def item(self):
@@ -2387,7 +2402,8 @@ class User(BaseAGOLClass):
            title - name of export item
            itemId - id of the item to export
            exportFormat - out format. Values: Shapefile, CSV or File
-                          Geodatabase, feature collection, GeoJson
+                          Geodatabase, feature collection, GeoJson,
+                          or Scene Package
            tags - comma seperated list of quick descriptors, the default is
             export.
            snippet - short explination of the exported item
@@ -2631,7 +2647,7 @@ class User(BaseAGOLClass):
         params = {
             "f": "json",
             'multipart' : 'true',
-            "filename"	: itemParameters.title,
+            "filename"	: os.path.basename(filePath)
         }
         res = self._post(url=url,
                          param_dict=params,

@@ -1,4 +1,6 @@
 from __future__ import print_function
+from __future__ import absolute_import
+
 
 import os
 import sys
@@ -9,7 +11,7 @@ import string
 import datetime
 import time
 
-from packages.six.moves import urllib_parse as urlparse
+from .packages.six.moves import urllib_parse as urlparse
 import gc
 import operator
 #----------------------------------------------------------------------
@@ -162,6 +164,42 @@ def getLayerName(url):
         del urlSplit
 
         gc.collect()
+#----------------------------------------------------------------------
+
+def getOrgId(url):
+    """Extract the org ID from a url.
+
+    Args:
+        url (str): The url to parse.
+
+    Returns:
+        str: The org ID.
+
+    Examples:
+        >>> url = "http://services.arcgis.com/<random>/arcgis/rest/services/test/FeatureServer/12"
+        >>> arcresthelper.common.getLayerIndex(url)
+        '<random>'
+
+    """
+    urlInfo = None
+    urlSplit = None
+    try:
+        urlInfo = urlparse.urlparse(url)
+        urlSplit = str(urlInfo.path).split('/')
+        name = urlSplit[len(urlSplit)-7]
+        return name
+    except:
+        return url
+
+    finally:
+        urlInfo = None
+        urlSplit = None
+
+        del urlInfo
+        del urlSplit
+
+        gc.collect()
+
 #----------------------------------------------------------------------
 def random_string_generator(size=6, chars=string.ascii_uppercase):
     """Generates a random string from a set of characters.

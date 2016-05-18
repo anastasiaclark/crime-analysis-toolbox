@@ -6,6 +6,7 @@ from .parameters import Extension
 import os
 import json
 import tempfile
+import xml.etree.ElementTree as ET
 ########################################################################
 class Services(BaseAGSServer):
     """ returns information about the services on AGS """
@@ -183,10 +184,9 @@ class Services(BaseAGSServer):
         }
         type_services = []
         folders = self.folders
-        folders.append("")
         baseURL = self._url
         for folder in folders:
-            if folder == "":
+            if folder == "/":
                 url = baseURL
             else:
                 url = baseURL + "/%s" % folder
@@ -194,12 +194,12 @@ class Services(BaseAGSServer):
                                securityHandler=self._securityHandler,
                                proxy_url=self._proxy_url,
                                proxy_port=self._proxy_port)
-            if res.has_key("services"):
+            if "services" in res:
                 for service in res['services']:
-                    #if service_type == "*":
-                        #service['URL'] = url + "/%s.%s" % (service['serviceName'],
-                                                           #service_type)
-                        #type_services.append(service)
+                    if service_type == "*":
+                        service['URL'] = url + "/%s.%s" % (service['serviceName'],
+                                                           service['type'])
+                        type_services.append(service)
                     if service['type'].lower() in lower_types:
                         service['URL'] = url + "/%s.%s" % (service['serviceName'],
                                                            service_type)
@@ -554,6 +554,7 @@ class Services(BaseAGSServer):
 ########################################################################
 class AGSService(BaseAGSServer):
     """ Defines a AGS Admin Service """
+    _frameworkProperties = None
     _proxy_port = None
     _proxy_url = None
     _securityHandler = None
@@ -693,7 +694,13 @@ class AGSService(BaseAGSServer):
         if self._jsonProperties is None:
             self.__init()
         return self._jsonProperties
-
+    #----------------------------------------------------------------------
+    @property
+    def frameworkProperties(self):
+        """returns the framework properties for an AGS instance"""
+        if self._frameworkProperties is None:
+            self.__init()
+        return self._frameworkProperties
     #----------------------------------------------------------------------
     @property
     def portalProperties(self):
@@ -1021,23 +1028,29 @@ class AGSService(BaseAGSServer):
         along with other supplementary files that make up the service.
 
         Inputs:
-           fileType - this can be json or xml.  json return the
-            manifest.json file.  xml returns the manifest.xml file.
+           fileType - this can be json or xml. json returns the
+            manifest.json file. xml returns the manifest.xml file. These
+            files are stored at \arcgisserver\directories\arcgissystem\
+            arcgisinput\%servicename%.%servicetype%\extracted folder.
 
-
+        Outputs:
+            Python dictionary if fileType is json and Python object of
+            xml.etree.ElementTree.ElementTree type if fileType is xml.
         """
 
         url = self._url + "/iteminfo/manifest/manifest.%s" % fileType
-        params = {
-        }
+        params = {}
         f = self._get(url=url,
                       param_dict=params,
                       securityHandler=self._securityHandler,
-                     proxy_url=self._proxy_url,
-                     proxy_port=self._proxy_port,
-                     out_folder=tempfile.gettempdir(),
-                     file_name=os.path.basename(url))
-        return open(f, 'r').read()
+                      proxy_url=self._proxy_url,
+                      proxy_port=self._proxy_port,
+                      out_folder=tempfile.gettempdir(),
+                      file_name=os.path.basename(url))
+        if fileType == 'json':
+            return f
+        if fileType == 'xml':
+            return ET.ElementTree(ET.fromstring(f))
     #----------------------------------------------------------------------
     def addPermission(self, principal, isAllowed=True):
         """

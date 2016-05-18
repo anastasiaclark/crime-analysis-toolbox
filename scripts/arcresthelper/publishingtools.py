@@ -1,13 +1,14 @@
 
 from __future__ import print_function
+from __future__ import absolute_import
 
-from securityhandlerhelper import securityhandlerhelper
+from .securityhandlerhelper import securityhandlerhelper
 import re as re
 
 dateTimeFormat = '%Y-%m-%d %H:%M'
 import arcrest
 
-import arcresthelper.featureservicetools as featureservicetools
+from . import featureservicetools as featureservicetools
 
 from arcrest.hostedservice import AdminFeatureService
 import datetime, time
@@ -17,7 +18,7 @@ import arcresthelper.common as common
 import gc
 import sys
 
-from packages.six.moves import urllib_parse as urlparse
+from .packages.six.moves import urllib_parse as urlparse
 
 try:
     import pyparsing
@@ -33,10 +34,20 @@ def lineno():
     return inspect.currentframe().f_back.f_lineno
 #----------------------------------------------------------------------
 def trace():
-    """
-        trace finds the line, the filename
-        and error message and returns it
-        to the user
+    """Determines information about where an error was thrown.
+
+    Returns:
+        tuple: line number, filename, error message
+    Examples:
+        >>> try:
+        ...     1/0
+        ... except:
+        ...     print("Error on '{}'\\nin file '{}'\\nwith error '{}'".format(*trace()))
+        ...        
+        Error on 'line 1234'
+        in file 'C:\\foo\\baz.py'
+        with error 'ZeroDivisionError: integer division or modulo by zero'
+
     """
     import traceback, inspect, sys
     tb = sys.exc_info()[2]
@@ -51,25 +62,32 @@ def trace():
 
 
 class publishingtools(securityhandlerhelper):
-    def getItemID(self,userContent,title=None, name=None, itemType=None):
-        """
-           This function retrieves the item ID if the item exist
+    #----------------------------------------------------------------------
+    def getItemID(self, userContent, title=None, name=None, itemType=None):
+        """Gets the ID of an item by a combination of title, name, and type.
+        
+        Args:
+            userContent (list): A list of user content.
+            title (str): The title of the item. Defaults to ``None``.
+            name (str): The name of the item. Defaults to ``None``.
+            itemType (str): The type of the item. Defaults to ``None``.
+        Returns:
+            str: The item's ID. If the item does not exist, ``None``.        
+        Raises:
+            AttributeError: If both ``title`` and ``name`` are not specified (``None``).
+        See Also:
+            :py:func:`getItem`
 
-           Inputs:
-              name - the name of the item
-            userContent - a list of user contnet
-           Output:
-              string - ID of item, none if item does not exist
         """
         itemID = None
-        if name == None and title == None:
+        if name is None and title is None:
             raise AttributeError('Name or Title needs to be specified')
         for item in userContent:
-            if title is None and not name is None:
+            if title is None and name is not None:
                 if item.name == name and (itemType is None or item.type == itemType):
                     return item.id
 
-            elif not title is None and name is None:
+            elif title is not None and name is None:
                 if item.title == title and (itemType is None or item.type == itemType):
                     return item.id
 
@@ -77,25 +95,32 @@ class publishingtools(securityhandlerhelper):
                 if item.name == name and item.title == title and (itemType is None or item.type == itemType):
                     return item.id
         return None
-    def getItem(self,userContent,title=None, name=None, itemType=None):
-        """
-           This function retrieves the item ID if the item exist
+    #----------------------------------------------------------------------    
+    def getItem(self, userContent, title=None, name=None, itemType=None):
+        """Gets an item by a combination of title, name, and type.
+        
+        Args:
+            userContent (list): A list of user content.
+            title (str): The title of the item. Defaults to ``None``.
+            name (str): The name of the item. Defaults to ``None``.
+            itemType (str): The type of the item. Defaults to ``None``.
+        Returns:
+            str: The item's ID. If the item does not exist, ``None``.        
+        Raises:
+            AttributeError: If both ``title`` and ``name`` are not specified (``None``).
+        See Also:
+            :py:func:`getItemID`
 
-           Inputs:
-              name - the name of the item
-            userContent - a list of user contnet
-           Output:
-              string - ID of item, none if item does not exist
         """
         itemID = None
-        if name == None and title == None:
+        if name is None and title is None:
             raise AttributeError('Name or Title needs to be specified')
         for item in userContent:
-            if title is None and not name is None:
+            if title is None and name is not None:
                 if item.name == name and (itemType is None or item.type == itemType):
                     return item
 
-            elif not title is None and name is None:
+            elif title is not None and name is None:
                 if item.title == title and (itemType is None or item.type == itemType):
                     return item
 
@@ -105,22 +130,23 @@ class publishingtools(securityhandlerhelper):
         return None
     #----------------------------------------------------------------------
     def folderExist(self, name, folders):
+        """Determines if a folder exists, case insensitively.
+        
+        Args:
+            name (str): The name of the folder to check.
+            folders (list): A list of folder dicts to check against. The dicts must contain
+                the key:value pair ``title``.
+        Returns:
+            bool: ``True`` if the folder exists in the list, ``False`` otherwise.
+          
         """
-           Determines if a folder exist
-
-           Inputs:
-             name - the name of the folder
-             folders - list of folders
-           Output:
-              boolean - true/false if the folder exist
-        """
-        if not name == None and not name == '':
+        if name is not None and name != '':
 
             folderID = None
 
             for folder in folders:
                 if folder['title'].lower() == name.lower():
-                    return True;
+                    return True
 
             del folders
 
@@ -128,9 +154,17 @@ class publishingtools(securityhandlerhelper):
 
         else:
             return False
-
     #----------------------------------------------------------------------
-    def publishItems(self,items_info):
+    def publishItems(self, items_info):
+        """Publishes a list of items.
+        
+        Args:
+            items_info (list): A list of JSON configuration items to publish.
+        
+        Returns:
+            list: A list of results from :py:meth:`arcrest.manageorg._content.User.addItem`.
+            
+        """
         if self.securityhandler is None:
             print ("Security handler required")
             return
@@ -142,7 +176,7 @@ class publishingtools(securityhandlerhelper):
             admin = arcrest.manageorg.Administration(securityHandler=self._securityHandler)
             item_results = []
             for item_info in items_info:
-                if item_info.has_key('ReplaceTag'):
+                if 'ReplaceTag' in item_info:
 
                     itemInfo = {"ReplaceTag":item_info['ReplaceTag'] }
                 else:
@@ -150,7 +184,7 @@ class publishingtools(securityhandlerhelper):
 
                 itemInfo['ItemInfo']  = self._publishItems(config=item_info)
 
-                if not itemInfo['ItemInfo'] is None and 'name' in itemInfo['ItemInfo']:
+                if itemInfo['ItemInfo'] is not None and 'name' in itemInfo['ItemInfo']:
                     print ("%s created" % itemInfo['ItemInfo']['name'])
                     item_results.append(itemInfo)
                 else:
@@ -182,7 +216,7 @@ class publishingtools(securityhandlerhelper):
 
             gc.collect()
      #----------------------------------------------------------------------
-    def _publishItems(self,config):
+    def _publishItems(self, config):
         name = None
         tags = None
         description = None
@@ -220,15 +254,15 @@ class publishingtools(securityhandlerhelper):
             extent = ''
             webmap_data = ''
 
-            if config.has_key('Data'):
+            if 'Data' in config:
                 itemData = config['Data']
 
-            if config.has_key('Url'):
+            if 'Url' in config:
                 url = config['Url']
 
             name = config['Title']
 
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat
@@ -248,7 +282,7 @@ class publishingtools(securityhandlerhelper):
             itemType = config['Type']
             typeKeywords = config['typeKeywords']
             skipIfExist = False
-            if config.has_key('SkipIfExist'):
+            if 'SkipIfExist' in config:
                 skipIfExist = config['SkipIfExist']
                 if str(skipIfExist).lower() == 'true':
                     skipIfExist = True
@@ -411,10 +445,17 @@ class publishingtools(securityhandlerhelper):
             del updateParams
 
             gc.collect()
-
-
     #----------------------------------------------------------------------
-    def publishMap(self,maps_info,fsInfo=None,itInfo=None):
+    def publishMap(self, maps_info, fsInfo=None, itInfo=None):
+        """Publishes a list of maps.
+        
+        Args:
+            maps_info (list): A list of JSON configuration maps to publish.
+        
+        Returns:
+            list: A list of results from :py:meth:`arcrest.manageorg._content.UserItem.updateItem`.
+            
+        """
         if self.securityhandler is None:
             print ("Security handler required")
             return
@@ -431,7 +472,7 @@ class publishingtools(securityhandlerhelper):
             for map_info in maps_info:
                 itemInfo = {}
 
-                if map_info.has_key('ReplaceInfo'):
+                if 'ReplaceInfo' in map_info:
                     replaceInfo = map_info['ReplaceInfo']
                 else:
                     replaceInfo = None
@@ -451,8 +492,8 @@ class publishingtools(securityhandlerhelper):
                                         replaceItem['ItemFolder'] = fs['FSInfo']['folderId']
                                         if 'convertCase' in fs['FSInfo']:
                                             replaceItem['convertCase'] = fs['FSInfo']['convertCase']
-                                    elif replaceItem.has_key('ItemID'):
-                                        if replaceItem.has_key('ItemFolder') == False:
+                                    elif 'ItemID' in replaceItem:
+                                        if 'ItemFolder' in replaceItem == False:
 
                                             itemId = replaceItem['ItemID']
                                             itemInfo = admin.content.getItem(itemId=itemId)
@@ -474,7 +515,7 @@ class publishingtools(securityhandlerhelper):
                                                     replaceItem['ReplaceString'] = itm['ItemInfo']['url']
 
 
-                if map_info.has_key('ReplaceTag'):
+                if 'ReplaceTag' in map_info:
 
                     itemInfo = {"ReplaceTag":map_info['ReplaceTag'] }
                 else:
@@ -514,7 +555,7 @@ class publishingtools(securityhandlerhelper):
 
             gc.collect()
     #----------------------------------------------------------------------
-    def _publishMap(self,config,replaceInfo=None,operationalLayers=None,tableLayers=None):
+    def _publishMap(self, config, replaceInfo=None, operationalLayers=None, tableLayers=None):
         name = None
         tags = None
         description = None
@@ -611,31 +652,31 @@ class publishingtools(securityhandlerhelper):
                         if replaceItem['ReplaceType'] == 'Global':
                             webmap_data = common.find_replace(webmap_data,replaceItem['SearchString'],replaceItem['ReplaceString'])
                         elif replaceItem['ReplaceType'] == 'Layer':
-                            if webmap_data.has_key('tables'):
+                            if 'tables' in webmap_data:
                                 opLayers = webmap_data['tables']
                                 for opLayer in opLayers:
                                     layerInfo= {}
                                     if replaceItem['SearchString'] in opLayer['url']:
 
                                         opLayer['url'] = opLayer['url'].replace(replaceItem['SearchString'],replaceItem['ReplaceString'])
-                                        if replaceItem.has_key('ItemID'):
+                                        if 'ItemID' in replaceItem:
                                             opLayer['itemId'] = replaceItem['ItemID']
                                         else:
                                             opLayer['itemId'] = None
                                             #opLayer['itemId'] = get_guid()
-                                        if replaceItem.has_key('convertCase'):
+                                        if 'convertCase' in replaceItem:
                                             if replaceItem['convertCase'] == 'lower':
                                                 layerInfo = {}
 
                                                 layerInfo['convertCase'] = replaceItem['convertCase']
                                                 layerInfo['fields'] = []
-                                                if opLayer.has_key("layerDefinition"):
+                                                if 'layerDefinition' in opLayer:
 
-                                                    if opLayer["layerDefinition"].has_key('drawingInfo'):
-                                                        if opLayer["layerDefinition"]['drawingInfo'].has_key('renderer'):
+                                                    if 'drawingInfo' in opLayer["layerDefinition"]:
+                                                        if 'renderer' in opLayer["layerDefinition"]['drawingInfo']:
                                                             if 'field1' in opLayer["layerDefinition"]['drawingInfo']['renderer']:
                                                                 opLayer["layerDefinition"]['drawingInfo']['renderer']['field1'] = opLayer["layerDefinition"]['drawingInfo']['renderer']['field1'].lower()
-                                                        if opLayer["layerDefinition"]['drawingInfo'].has_key('labelingInfo'):
+                                                        if 'labelingInfo' in opLayer["layerDefinition"]['drawingInfo']:
 
                                                             lblInfos = opLayer["layerDefinition"]['drawingInfo']['labelingInfo']
                                                             if len(lblInfos) > 0:
@@ -655,7 +696,7 @@ class publishingtools(securityhandlerhelper):
                                                                                     lblInfo['labelExpressionInfo']['value'] = str(lblInfo['labelExpressionInfo']['value']).replace(res,str(res).lower())
 
 
-                                                if opLayer.has_key("popupInfo"):
+                                                if 'popupInfo' in opLayer:
 
                                                     if 'mediaInfos' in opLayer['popupInfo'] and not opLayer['popupInfo']['mediaInfos'] is None:
                                                         for chart in opLayer['popupInfo']['mediaInfos']:
@@ -666,7 +707,7 @@ class publishingtools(securityhandlerhelper):
 
                                                                     for i in range(len(chart['value']['fields'])):
                                                                         chart['value']['fields'][i] = str(chart['value']['fields'][i]).lower()
-                                                    if opLayer['popupInfo'].has_key("fieldInfos"):
+                                                    if 'fieldInfos' in opLayer['popupInfo']:
 
                                                         for field in opLayer['popupInfo']['fieldInfos']:
                                                             newFld = str(field['fieldName']).lower()
@@ -687,24 +728,24 @@ class publishingtools(securityhandlerhelper):
                                 if replaceItem['SearchString'] in opLayer['url']:
 
                                     opLayer['url'] = opLayer['url'].replace(replaceItem['SearchString'],replaceItem['ReplaceString'])
-                                    if replaceItem.has_key('ItemID'):
+                                    if 'ItemID' in replaceItem:
                                         opLayer['itemId'] = replaceItem['ItemID']
                                     else:
                                         opLayer['itemId'] = None
                                         #opLayer['itemId'] = get_guid()
-                                    if replaceItem.has_key('convertCase'):
+                                    if 'convertCase' in replaceItem:
                                         if replaceItem['convertCase'] == 'lower':
                                             layerInfo = {}
 
                                             layerInfo['convertCase'] = replaceItem['convertCase']
                                             layerInfo['fields'] = []
-                                            if opLayer.has_key("layerDefinition"):
+                                            if 'layerDefinition' in opLayer:
 
-                                                if opLayer["layerDefinition"].has_key('drawingInfo'):
-                                                    if opLayer["layerDefinition"]['drawingInfo'].has_key('renderer'):
+                                                if 'drawingInfo' in opLayer["layerDefinition"]:
+                                                    if 'renderer' in opLayer["layerDefinition"]['drawingInfo']:
                                                         if 'field1' in opLayer["layerDefinition"]['drawingInfo']['renderer']:
                                                             opLayer["layerDefinition"]['drawingInfo']['renderer']['field1'] = opLayer["layerDefinition"]['drawingInfo']['renderer']['field1'].lower()
-                                                    if opLayer["layerDefinition"]['drawingInfo'].has_key('labelingInfo'):
+                                                    if 'labelingInfo' in opLayer["layerDefinition"]['drawingInfo']:
 
                                                         lblInfos = opLayer["layerDefinition"]['drawingInfo']['labelingInfo']
                                                         if len(lblInfos) > 0:
@@ -723,7 +764,7 @@ class publishingtools(securityhandlerhelper):
                                                                             for res in result:
                                                                                 lblInfo['labelExpressionInfo']['value'] = str(lblInfo['labelExpressionInfo']['value']).replace(res,str(res).lower())
 
-                                            if opLayer.has_key("popupInfo"):
+                                            if 'popupInfo' in opLayer:
 
                                                 if 'mediaInfos' in opLayer['popupInfo'] and not opLayer['popupInfo']['mediaInfos'] is None:
                                                     for k in range(len(opLayer['popupInfo']['mediaInfos'])):
@@ -736,7 +777,7 @@ class publishingtools(securityhandlerhelper):
                                                                 for i in range(len(chart['value']['fields'])):
                                                                     chart['value']['fields'][i] = str(chart['value']['fields'][i]).lower()
                                                             opLayer['popupInfo']['mediaInfos'][k] = chart
-                                                if opLayer['popupInfo'].has_key("fieldInfos"):
+                                                if 'fieldInfos' in opLayer['popupInfo']:
 
                                                     for field in opLayer['popupInfo']['fieldInfos']:
                                                         newFld = str(field['fieldName']).lower()
@@ -804,7 +845,7 @@ class publishingtools(securityhandlerhelper):
                     resultMap['Layers'][currentID] = resultLayer
 
 
-                if webmap_data.has_key('tables'):
+                if 'tables' in webmap_data:
 
                     opLayers = webmap_data['tables']
                     for opLayer in opLayers:
@@ -851,7 +892,7 @@ class publishingtools(securityhandlerhelper):
 
             name = config['Title']
 
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat
@@ -1057,9 +1098,17 @@ class publishingtools(securityhandlerhelper):
             del updateParams
 
             gc.collect()
-
     #----------------------------------------------------------------------
-    def publishCombinedWebMap(self,maps_info,webmaps):
+    def publishCombinedWebMap(self, maps_info, webmaps):
+        """Publishes a combination of web maps.
+        
+        Args:
+            maps_info (list): A list of JSON configuration combined web maps to publish.
+        
+        Returns:
+            list: A list of results from :py:meth:`arcrest.manageorg._content.UserItem.updateItem`.
+            
+        """
         if self.securityhandler is None:
             print ("Security handler required")
             return
@@ -1101,7 +1150,7 @@ class publishingtools(securityhandlerhelper):
                         tblLays.extend(tableLayers)
                         tableLayers = tblLays
 
-                if map_info.has_key('ReplaceTag'):
+                if 'ReplaceTag' in map_info:
 
                     itemInfo = {"ReplaceTag":map_info['ReplaceTag'] }
                 else:
@@ -1160,13 +1209,13 @@ class publishingtools(securityhandlerhelper):
 
             gc.collect()
     #----------------------------------------------------------------------
-    def publishFsFromMXD(self,fs_config):
-        """
-            publishs a feature service from a mxd
-            Inputs:
-                feature_service_config: Json file with list of feature service publishing details
-            Output:
-                feature service item information
+    def publishFsFromMXD(self, fs_config):
+        """Publishes the layers in a MXD to a feauture service.
+        
+        Args:
+            fs_config (list): A list of JSON configuration feature service details to publish.
+        Returns:
+            dict: A dictionary of results objects.
 
         """
         fs = None
@@ -1183,7 +1232,7 @@ class publishingtools(securityhandlerhelper):
             res = []
             if isinstance(fs_config, list):
                 for fs in fs_config:
-                    if fs.has_key('ReplaceTag'):
+                    if 'ReplaceTag' in fs:
 
                         resItm = {"ReplaceTag":fs['ReplaceTag'] }
                     else:
@@ -1198,7 +1247,7 @@ class publishingtools(securityhandlerhelper):
                         print (str(resItm['FSInfo']))
 
             else:
-                if fs_config.has_key('ReplaceTag'):
+                if 'ReplaceTag' in fs_config:
 
                     resItm = {"ReplaceTag":fs_config['ReplaceTag'] }
                 else:
@@ -1235,13 +1284,13 @@ class publishingtools(securityhandlerhelper):
 
             gc.collect()
     #----------------------------------------------------------------------
-    def publishFeatureCollections(self,configs):
-        """
-            publishs a feature service from a mxd
-            Inputs:
-                feature_service_config: Json file with list of feature service publishing details
-            Output:
-                feature service item information
+    def publishFeatureCollections(self, configs):
+        """Publishes feature collections to a feature service.
+        
+        Args:
+            configs (list): A list of JSON configuration feature service details to publish.
+        Returns:
+            dict: A dictionary of results objects.
 
         """
         if self.securityhandler is None:
@@ -1254,7 +1303,7 @@ class publishingtools(securityhandlerhelper):
             res = []
             if isinstance(configs, list):
                 for config in configs:
-                    if config.has_key('ReplaceTag'):
+                    if 'ReplaceTag' in config:
 
                         resItm = {"ReplaceTag":config['ReplaceTag'] }
                     else:
@@ -1293,9 +1342,8 @@ class publishingtools(securityhandlerhelper):
             del config
 
             gc.collect()
-
     #----------------------------------------------------------------------
-    def _publishFSFromMXD(self,config,url='http://www.arcgis.com'):
+    def _publishFSFromMXD(self, config, url='http://www.arcgis.com'):
         mxd = None
         q = None
         everyone = None
@@ -1349,7 +1397,7 @@ class publishingtools(securityhandlerhelper):
             everyone = config['ShareEveryone']
             org = config['ShareOrg']
             groupNames = config['Groups']  #Groups are by ID. Multiple groups comma separated
-            if config.has_key('EnableEditTracking'):
+            if 'EnableEditTracking' in config:
                 print ("enableEditTracking parameter has been deprecated, please add a definition section to the config")
                 enableEditTracking = config['EnableEditTracking']
             else:
@@ -1367,17 +1415,17 @@ class publishingtools(securityhandlerhelper):
 
                 if 'capabilities' in definition:
                     capabilities = definition['capabilities']
-            if config.has_key("maxRecordCount"):
+            if 'maxRecordCount' in config:
                 maxRecordCount =  config["maxRecordCount"]
             else:
                 maxRecordCount = '1000' # If not cast as a string, the MXDtoFeatureServiceDef method called below returns an error stating 'cannot serialize 1000 (type int)'
 
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat
             skipIfExist = False
-            if config.has_key('SkipIfExist'):
+            if 'SkipIfExist' in config:
                 skipIfExist = config['SkipIfExist']
                 if str(skipIfExist).lower() == 'true':
                     skipIfExist = True
@@ -1400,7 +1448,7 @@ class publishingtools(securityhandlerhelper):
             admin = arcrest.manageorg.Administration(securityHandler=self.securityhandler)
             hostingServers = admin.hostingServers()
             if len(hostingServers) == 0:
-                return "No hosting servers can be found, if this is portal, update the settings to include a hosting server."
+                return ("No hosting servers can be found, if this is portal, update the settings to include a hosting server.")
 
             content = admin.content
             userInfo = content.users.user()
@@ -1838,7 +1886,7 @@ class publishingtools(securityhandlerhelper):
             del enableResults
             gc.collect()
     #----------------------------------------------------------------------
-    def _publishAppLogic(self,appDet,map_info=None,fsInfo=None):
+    def _publishAppLogic(self, appDet, map_info=None, fsInfo=None):
         itemInfo = None
         replaceInfo = None
         replaceItem = None
@@ -1850,7 +1898,7 @@ class publishingtools(securityhandlerhelper):
             admin = arcrest.manageorg.Administration(securityHandler=self._securityHandler)
             itemInfo = {}
 
-            if appDet.has_key('ReplaceInfo'):
+            if 'ReplaceInfo' in appDet:
                 replaceInfo = appDet['ReplaceInfo']
             else:
                 replaceInfo = None
@@ -1860,7 +1908,7 @@ class publishingtools(securityhandlerhelper):
                 for replaceItem in replaceInfo:
                     if fsInfo is not None:
                         for fsDet in fsInfo:
-                            if fsDet.has_key('ReplaceTag'):
+                            if 'ReplaceTag' in fsDet:
                                 if 'ReplaceString' in replaceItem:
                                     if fsDet is not None and replaceItem['ReplaceString'] == fsDet['ReplaceTag'] and \
                                        (replaceItem['ReplaceType'] == 'Service' or replaceItem['ReplaceType'] == 'Layer'):
@@ -1872,7 +1920,7 @@ class publishingtools(securityhandlerhelper):
                                         replaceItem['ReplaceType'] = "Global"
                     if map_info is not None:
                         for mapDet in map_info:
-                            if mapDet.has_key('ReplaceTag'):
+                            if 'ReplaceTag' in mapDet:
                                 if 'ReplaceString' in replaceItem:
                                     if mapDet is not None and replaceItem['ReplaceString'] == mapDet['ReplaceTag'] and \
                                        replaceItem['ReplaceType'] == 'Map':
@@ -1888,8 +1936,8 @@ class publishingtools(securityhandlerhelper):
                                                     if value["Name"] == repInfo[1]:
                                                         replaceItem['ReplaceString'] = value["ID"]
 
-                                if replaceItem.has_key('ItemID'):
-                                    if replaceItem.has_key('ItemFolder') == False:
+                                if 'ItemID' in replaceItem:
+                                    if 'ItemFolder' in replaceItem == False:
 
                                         itemId = replaceItem['ItemID']
 
@@ -1901,7 +1949,7 @@ class publishingtools(securityhandlerhelper):
                                             replaceItem['ItemFolder'] = None
 
 
-            if appDet.has_key('ReplaceTag'):
+            if 'ReplaceTag' in appDet:
 
                 itemInfo = {"ReplaceTag":appDet['ReplaceTag'] }
             else:
@@ -1953,7 +2001,17 @@ class publishingtools(securityhandlerhelper):
             del itemId
             gc.collect()
     #----------------------------------------------------------------------
-    def publishApp(self,app_info,map_info=None,fsInfo=None):
+    def publishApp(self, app_info, map_info=None, fsInfo=None):
+        """Publishes apps to AGOL/Portal
+        
+        Args:
+            app_info (list): A list of JSON configuration apps to publish.
+            map_info (list): Defaults to ``None``.
+            fsInfo (list): Defaults to ``None``.
+        Returns:
+            dict: A dictionary of results objects.
+            
+        """
         if self.securityhandler is None:
             print ("Security handler required")
             return
@@ -2098,7 +2156,7 @@ class publishingtools(securityhandlerhelper):
 
             name = config['Title']
 
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat
@@ -2288,7 +2346,7 @@ class publishingtools(securityhandlerhelper):
 
             gc.collect()
     #----------------------------------------------------------------------
-    def _publishDashboard(self,config, replaceInfo):
+    def _publishDashboard(self, config, replaceInfo):
         resultApp = None
         tags = None
         description = None
@@ -2399,17 +2457,17 @@ class publishingtools(securityhandlerhelper):
                             dataSourceIDToFields = {}
                             for widget in widgets:
 
-                                if widget.has_key('mapId'):
+                                if 'mapId' in widget:
                                     if replaceItem['SearchString'] == widget['mapId']:
                                         widget['mapId'] = replaceItem['ItemID']
-                                        if widget.has_key('mapTools'):
+                                        if 'mapTools' in widget:
                                             for mapTool in widget['mapTools']:
-                                                if mapTool.has_key('layerIds'):
+                                                if 'layerIds' in mapTool:
                                                     mapTool['layerIds'] = layerIDs
-                                        if widget.has_key('dataSources'):
+                                        if 'dataSources' in widget:
                                             for dataSource in widget['dataSources']:
 
-                                                if dataSource.has_key('layerId'):
+                                                if 'layerId' in dataSource:
                                                     if 'LayerInfo' in replaceItem:
                                                         if dataSource['layerId'] in replaceItem['LayerInfo']:
                                                             layerIDSwitch.append({"OrigID":dataSource['layerId'],
@@ -2419,12 +2477,12 @@ class publishingtools(securityhandlerhelper):
                                                             #dataSourceIDToFields[dataSource['id']] = {'NewID': replaceItem['LayerInfo'][dataSource['layerId']]['ID'],
                                                                                                       #'FieldInfo': replaceItem['LayerInfo'][dataSource['layerId']]['FieldInfo']}
                                                             dataSource['layerId'] = replaceItem['LayerInfo'][dataSource['layerId']]['ID']
-                                                    elif layerNamesID.has_key(dataSource['name']):
+                                                    elif dataSource['name'] in layerNamesID:
                                                         layerIDSwitch.append({"OrigID":dataSource['layerId'],"NewID":layerNamesID[dataSource['name']] })
                                                         dataSource['layerId'] = layerNamesID[dataSource['name']]
                                             for dataSource in widget['dataSources']:
 
-                                                if dataSource.has_key('filter'):
+                                                if 'filter' in dataSource:
                                                     if dataSource['parentDataSourceId'] in dataSourceIDToFields:
                                                         if 'whereClause' in dataSource['filter']:
                                                             whercla = str(dataSource['filter']['whereClause'])
@@ -2469,7 +2527,7 @@ class publishingtools(securityhandlerhelper):
 
             name = config['Title']
 
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat
@@ -2670,7 +2728,15 @@ class publishingtools(securityhandlerhelper):
             del updateResults
             gc.collect()
     #----------------------------------------------------------------------
-    def updateFeatureService(self,efs_config):
+    def updateFeatureService(self, efs_config):
+        """Updates a feature service.
+        
+        Args:
+            efs_config (list): A list of JSON configuration feature service details to update.
+        Returns:
+            dict: A dictionary of results objects.
+        
+        """
         if self.securityhandler is None:
             print ("Security handler required")
             return
@@ -2790,7 +2856,7 @@ class publishingtools(securityhandlerhelper):
             # Service settings
             zipfile = config['Zip']
             service_name = config['Title']
-            if config.has_key('DateTimeFormat'):
+            if 'DateTimeFormat' in config:
                 loc_df = config['DateTimeFormat']
             else:
                 loc_df = dateTimeFormat

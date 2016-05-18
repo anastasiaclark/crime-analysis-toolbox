@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import division
 import datetime
 import time
 import json
@@ -8,6 +9,7 @@ try:
     arcpyFound = True
 except:
     arcpyFound = False
+from ..packages import six
 import copy
 import os
 import tempfile
@@ -18,7 +20,12 @@ from .._abstract.abstract import AbstractGeometry
 __all__ = ['_unicode_convert', "Feature", "FeatureSet",
            "_date_handler", "local_time_to_online",
            "online_time_to_string", "timestamp_to_datetime",
-           "MosaicRuleObject"]
+           "MosaicRuleObject", "create_uid"]
+def create_uid():
+    if six.PY3:
+        return uuid.uuid4().hex
+    else:
+        return uuid.uuid4().get_hex()
 def _unicode_convert(obj):
     """ converts unicode to anscii """
     if isinstance(obj, dict):
@@ -52,16 +59,34 @@ def local_time_to_online(dt=None):
 
     return (time.mktime(dt.timetuple())  * 1000) + (utc_offset *1000)
 #----------------------------------------------------------------------
-def online_time_to_string(value,timeFormat):
+def online_time_to_string(value, timeFormat, utcOffset=0):
+    """Converts AGOL timestamp to formatted string.
+
+    Args:
+        value (float): A UTC timestamp as reported by AGOL (time in ms since Unix epoch * 1000)
+        timeFormat (str): Date/Time format string as parsed by :py:func:`datetime.strftime`.
+        utcOffset (int): Hours difference from UTC and desired output. Default is 0 (remain in UTC).
+
+    Returns:
+        str: A string representation of the timestamp.
+
+    Examples:
+        >>> rcrest.general.online_time_to_string(1457167261000.0, "%Y-%m-%d %H:%M:%S")
+        '2016-03-05 00:41:01'
+        >>> rcrest.general.online_time_to_string(731392515000.0, '%m/%d/%Y %H:%M:%S', -8) # PST is UTC-8:00
+        '03/05/1993 12:35:15'
+
+    See Also:
+       :py:func:`local_time_to_online` for converting a :py:class:`datetime.datetime` object to AGOL timestamp
+
     """
-       Converts a timestamp to date/time string
-       Inputs:
-          value - timestamp as long
-          timeFormat - output date/time format
-       Output:
-          string
-    """
-    return datetime.datetime.fromtimestamp(value /1000).strftime(timeFormat)
+
+    try:
+        return datetime.datetime.fromtimestamp(value/1000 + utcOffset*3600).strftime(timeFormat)
+    except:
+        return ""
+    finally:
+        pass
 #----------------------------------------------------------------------
 def timestamp_to_datetime(timestamp):
     """
@@ -161,11 +186,11 @@ class Feature(object):
         """returns the feature as a dictionary"""
         feat_dict = {}
         if self._geom is not None:
-            if self._dict.has_key('feature'):
-                feat_dict['geometry'] =  self._dict['feature']['geometry']
-            elif self._dict.has_key('geometry'):
+            if 'feature' in self._dict:
+                feat_dict['geometry'] = self._dict['feature']['geometry']
+            elif 'geometry' in self._dict:
                 feat_dict['geometry'] =  self._dict['geometry']
-        if self._dict.has_key("feature"):
+        if 'feature' in self._dict:
             feat_dict['attributes'] = self._dict['feature']['attributes']
         else:
             feat_dict['attributes'] = self._dict['attributes']
@@ -198,17 +223,23 @@ class Feature(object):
             else:
                 sr = None
             if self._geom is None:
-                if self._dict.has_key('feature'):
+                if 'feature' in self._dict:
                     self._geom = arcpy.AsShape(self._dict['feature']['geometry'], esri_json=True)
-                elif self._dict.has_key('geometry'):
+                elif 'geometry' in self._dict:
                     self._geom = arcpy.AsShape(self._dict['geometry'], esri_json=True)
             return self._geom
         return None
+    @geometry.setter
+    def geometry(self, value):
+        """gets/sets a feature's geometry"""
+        if isinstance(value, [Polygon, Point, Polyline, MultiPoint]):
+            if value.type == self.geometryType:
+                self._geom = value
     #----------------------------------------------------------------------
     @property
     def fields(self):
         """ returns a list of feature fields """
-        if self._dict.has_key("feature"):
+        if 'feature' in self._dict:
             self._attributes = self._dict['feature']['attributes']
         else:
             self._attributes = self._dict['attributes']
@@ -591,15 +622,16 @@ class FeatureSet(object):
         """returns a featureset from a JSON string"""
         jd = json.loads(jsonValue)
         features = []
-        if jd.has_key('fields'):
+        if 'fields' in jd:
             fields = jd['fields']
         else:
-            fields = {'fields':[]}
-        for feat in jd['features']:
-            wkid = None
-            if 'spatialReference' in jd and 'latestWkid' in jd['spatialReference']:
-                wkid = jd['spatialReference']['latestWkid']
-            features.append(Feature(json_string=feat, wkid=wkid))
+            fields = {'fields':[]} 
+        if 'features' in jd:
+            for feat in jd['features']:
+                wkid = None
+                if 'spatialReference' in jd and 'latestWkid' in jd['spatialReference']:
+                    wkid = jd['spatialReference']['latestWkid']
+                features.append(Feature(json_string=feat, wkid=wkid))
         return FeatureSet(fields,
                           features,
                           hasZ=jd['hasZ'] if 'hasZ' in jd else False,
@@ -694,23 +726,68 @@ class FeatureSet(object):
         """gets/sets the displayFieldName"""
         self._displayFieldName = value
     #----------------------------------------------------------------------
+   
     def save(self, saveLocation, outName):
         """
         Saves a featureset object to a feature class
         Input:
            saveLocation - output location of the data
            outName - name of the table the data will be saved to
+                Types: 
+                    *.csv - CSV file returned
+                    *.json - text file with json
+                    * If no extension, a shapefile if the path is a 
+                        folder, a featureclass if the path is a GDB
+                    
         """
-        tempDir =  tempfile.gettempdir()
-        tempFile = os.path.join(tempDir, "%s.json" % uuid.uuid4().get_hex())
-        with open(tempFile, 'wb') as writer:
-            writer.write(str(self))
-            writer.flush()
-            writer.close()
-        del writer
-        res = json_to_featureclass(json_file=tempFile,
-                                   out_fc=os.path.join(saveLocation, outName))
-        os.remove(tempFile)
+        filename, file_extension = os.path.splitext(outName)
+        if (file_extension == ".csv"):
+            res = os.path.join(saveLocation,outName)
+            import sys
+            if sys.version_info[0] == 2:
+                access = 'wb+'
+                kwargs = {}
+            else:
+                access = 'wt+'
+                kwargs = {'newline':''}
+            with open(res, access, **kwargs) as csvFile:
+                import csv
+                f = csv.writer(csvFile)
+                fields = []
+                #write the headers to the csv
+                for field in self.fields:
+                    fields.append(field['name'])
+                f.writerow(fields)
+        
+                newRow = []
+                #Loop through the results and save each to a row
+                for feature in self:
+                    newRow = []
+                    for field in self.fields:
+                        newRow.append(feature.get_value(field['name']))
+                    f.writerow(newRow)
+                csvFile.close()
+            del csvFile
+        elif (file_extension == ".json"):
+            res = os.path.join(saveLocation,outName)
+            with open(res, 'wb') as writer:
+                
+                json.dump(self.value, writer, sort_keys = True, indent = 4, ensure_ascii=False)
+                writer.flush()
+                writer.close()
+            del writer
+            
+        else:
+            tempDir =  tempfile.gettempdir()
+            tempFile = os.path.join(tempDir, "%s.json" % uuid.uuid4().hex)
+            with open(tempFile, 'wt') as writer:
+                writer.write(self.toJSON)
+                writer.flush()
+                writer.close()
+            del writer
+            res = json_to_featureclass(json_file=tempFile,
+                                       out_fc=os.path.join(saveLocation, outName))
+            os.remove(tempFile)
         return res
     #----------------------------------------------------------------------
     @property

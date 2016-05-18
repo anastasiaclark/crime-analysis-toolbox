@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import division
 import os
 import json
 import uuid
@@ -11,8 +12,9 @@ from ..common.spatial import scratchFolder, json_to_featureclass, \
     featureclass_to_json
 from ..common import filters
 from ..common.general import _date_handler, Feature, FeatureSet
+from ..agol.services import FeatureLayer
 ########################################################################
-class FeatureLayer(BaseAGSServer):
+class FeatureLayer_Depricated(BaseAGSServer):
     """
        This contains information about a feature service's layer.
     """
@@ -56,9 +58,12 @@ class FeatureLayer(BaseAGSServer):
     _useStandardizedQueries = None
     _securityHandler = None
     _supportsRollbackOnFailureParameter = None
+    _supportsApplyEditsWithGlobalIds = None
     _globalIdField = None
+    _supportsValidateSQL = None
     _syncCanReturnChanges = None
     _allowGeometryUpdates = None
+    _supportsCalculate = None
     _objectIdField = None
     _templates = None
     _editFieldsInfo = None
@@ -70,6 +75,7 @@ class FeatureLayer(BaseAGSServer):
     _standardMaxRecordCount = None
     _tileMaxRecordCount = None
     _maxRecordCountFactor = None
+    _dateFieldsTimeReference = None
     #----------------------------------------------------------------------
     def __init__(self, url, securityHandler=None,
                  initialize=False,
@@ -159,6 +165,34 @@ class FeatureLayer(BaseAGSServer):
         if self._allowGeometryUpdates is None:
             self.__init()
         return self._allowGeometryUpdates
+    #----------------------------------------------------------------------
+    @property
+    def supportsCalculate(self):
+        """ returns the boolean value """
+        if self._supportsCalculate is None:
+            self.__init()
+        return self._supportsCalculate
+    #----------------------------------------------------------------------
+    @property
+    def supportsApplyEditsWithGlobalIds(self):
+        """ returns the boolean value """
+        if self._supportsApplyEditsWithGlobalIds is None:
+            self.__init()
+        return self._supportsApplyEditsWithGlobalIds
+    #----------------------------------------------------------------------
+    @property
+    def supportsValidateSQL(self):
+        """ returns the boolean value """
+        if self._supportsValidateSQL is None:
+            self.__init()
+        return self._supportsValidateSQL
+    #----------------------------------------------------------------------
+    @property
+    def dateFieldsTimeReference(self):
+        """ returns the boolean value """
+        if self._dateFieldsTimeReference is None:
+            self.__init()
+        return self._dateFieldsTimeReference
     #----------------------------------------------------------------------
     @property
     def objectIdField(self):
@@ -255,7 +289,13 @@ class FeatureLayer(BaseAGSServer):
     def parentLayer(self):
         """ returns information about the parent """
         if self._parentLayer is None:
+            from ..agol.services import FeatureService
             self.__init()
+            url = os.path.dirname(self._url)
+            self._parentLayer = FeatureService(url=url,
+                                               securityHandler=self._securityHandler,
+                                               proxy_url=self._proxy_url,
+                                               proxy_port=self._proxy_port)
         return self._parentLayer
     #----------------------------------------------------------------------
     @property
@@ -474,7 +514,7 @@ class FeatureLayer(BaseAGSServer):
         """
         l.sort()
         newn = int(1.0 * len(l) / n + 0.5)
-        for i in xrange(0, n-1):
+        for i in range(0, n-1):
             yield l[i*newn:i*newn+newn]
         yield l[n*newn-newn:]
     #----------------------------------------------------------------------
@@ -899,6 +939,98 @@ class FeatureLayer(BaseAGSServer):
             return results
         return
     #----------------------------------------------------------------------
+    def queryRelatedRecords(self,
+                            objectIds,
+                            relationshipId,
+                            outFields="*",
+                            definitionExpression=None,
+                            returnGeometry=True,
+                            maxAllowableOffset=None,
+                            geometryPrecision=None,
+                            outWKID=None,
+                            gdbVersion=None,
+                            returnZ=False,
+                            returnM=False):
+        """
+           The Query Related Records operation is performed on a feature service
+           layer resource. The result of this operation are feature sets grouped
+           by source layer/table object IDs. Each feature set contains
+           Feature objects including the values for the fields requested by
+           the user. For related layers, if you request geometry
+           information, the geometry of each feature is also returned in
+           the feature set. For related tables, the feature set does not
+           include geometries. All parameters related to geometry are
+           ignored when querying related tables.
+           Inputs:
+              objectIds - The object IDs of the table/layer to be queried.
+              relationshipId - The ID of the relationship to be queried.
+              outFields - The list of fields from the related table/layer
+                          to be included in the returned feature set. This
+                          list is a comma delimited list of field names. If
+                          you specify the shape field in the list of return
+                          fields, it is ignored. To request geometry, set
+                          returnGeometry to true.
+                          You can also specify the wildcard "*" as the
+                          value of this parameter. In this case, the result
+                          s will include all the field values.
+              definitionExpression - The definition expression to be
+                                     applied to the related table/layer.
+                                     From the list of objectIds, only those
+                                     records that conform to this
+                                     expression are queried for related
+                                     records.
+              returnGeometry - If true, the feature set includes the
+                               geometry associated with each feature. The
+                               default is true.
+              maxAllowableOffset - This option can be used to specify the
+                                   maxAllowableOffset to be used for
+                                   generalizing geometries returned by the
+                                   query operation. The maxAllowableOffset
+                                   is in the units of the outSR. If outSR
+                                   is not specified, then
+                                   maxAllowableOffset is assumed to be in
+                                   the unit of the spatial reference of the
+                                   map.
+              geometryPrecision - This option can be used to specify the
+                                  number of decimal places in the response
+                                  geometries.
+              outWKID - The WKID for the spatial reference of the
+                        returned geometry.
+              gdbVersion - The geodatabase version to query. This parameter
+                           applies only if the isDataVersioned property of
+                           the layer queried is true.
+              returnZ - If true, Z values are included in the results if
+                        the features have Z values. Otherwise, Z values are
+                        not returned. The default is false.
+              returnM - If true, M values are included in the results if
+                        the features have M values. Otherwise, M values are
+                        not returned. The default is false.
+        """
+        params = {
+            "f" : "json",
+            "objectIds" : objectIds,
+            "relationshipId" : relationshipId,
+            "outFields" : outFields,
+            "returnGeometry" : returnGeometry,
+            "returnM" : returnM,
+            "returnZ" : returnZ
+        }
+        if gdbVersion is not None:
+            params['gdbVersion'] = gdbVersion
+        if definitionExpression is not None:
+            params['definitionExpression'] = definitionExpression
+        if outWKID is not None:
+            params['outSR'] = geometry.SpatialReference(outWKID).asDictionary
+        if maxAllowableOffset is not None:
+            params['maxAllowableOffset'] = maxAllowableOffset
+        if geometryPrecision is not None:
+            params['geometryPrecision'] = geometryPrecision
+        quURL = self._url + "/queryRelatedRecords"
+        res = self._get(url=quURL, param_dict=params,
+                        securityHandler=self._securityHandler,
+                        proxy_url=self._proxy_url, proxy_port=self._proxy_port)
+        return res
+    #----------------------------------------------------------------------
     def calculate(self, where, calcExpression, sqlFormat="standard"):
         """
         The calculate operation is performed on a feature service layer
@@ -1033,10 +1165,11 @@ class GroupLayer(FeatureLayer):
         }
         if self._securityHandler is not None:
             params['token'] = self._securityHandler.token
-        json_dict = json.loads(self._get(self._url, params,
+        json_dict = self._get(self._url, params,
                                             securityHandler=self._securityHandler,
                                             proxy_url=self._proxy_url,
-                                            proxy_port=self._proxy_port))
+                                            proxy_port=self._proxy_port)
+        self._json = json.dumps(json_dict)
         attributes = [attr for attr in dir(self)
                       if not attr.startswith('__') and \
                       not attr.startswith('_')]
@@ -1045,6 +1178,10 @@ class GroupLayer(FeatureLayer):
                 setattr(self, "_"+ k, v)
             else:
                 print("%s - attribute not implemented in GroupLayer." % k)
+########################################################################
+class SchematicsLayer(FeatureLayer):
+    """ represents a Schematics Layer  """
+    pass
 ########################################################################
 class TableLayer(FeatureLayer):
     """Table object is exactly like FeatureLayer object"""
