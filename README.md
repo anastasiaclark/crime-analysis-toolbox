@@ -9,9 +9,9 @@ The Crime Analysis Toolbox contains a series of tools for identifying and analyz
 
 ####Note to Beta Testers:
 In the latest version of the Crime Analysis Toolbox we have added a folder called Utilities, under which there is a new tool called Export Incidents to CSV. This tool allows you to quickly and easily export incident data from ArcGIS for use in the Near Repeat Calculator (to determine the statistical significance of your repeat and near repeat patterns).  The tool requires you to:
--	Identify the feature class containing the incident data you wish to export
--	Identify the field containing the date of the incident (i.e., the committed from date of the incident)
--	Specify the location and the name of the CSV file that is to be exported.
+-   Identify the feature class containing the incident data you wish to export
+-   Identify the field containing the date of the incident (i.e., the committed from date of the incident)
+-   Specify the location and the name of the CSV file that is to be exported.
 
 The CSV file will contain three columns: X and Y coordinates for your incident data (based on the projected geographic coordinate system of the data) and the date of the incident.  The CSV file can then be opened directly in the Near Repeat Calculator without any further manipulation.
 
@@ -64,6 +64,3 @@ Licensed under the Apache License, Version 2.0 (the "License"); you may not use 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
 A copy of the license is available in the repository's [LICENSE.txt][] file.
-
-[](Esri Tags: ArcGISSolutions Local-Government)
-[](Esri Language: Python)
